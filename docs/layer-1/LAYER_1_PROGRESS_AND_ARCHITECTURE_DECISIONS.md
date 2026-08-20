@@ -1479,3 +1479,87 @@ At this point Layer 1 contains:
     OpenAI API
 
 This establishes the initial production-oriented LLM integration boundary.
+
+
+
+
+---
+
+# 10. LLM Provider Abstraction and Factory
+
+## 10.1 What We Implemented
+
+We introduced a provider-independent LLM abstraction so that the rest of the application does not directly depend on the OpenAI SDK.
+
+The implementation consists of:
+
+- `LLMClient` — abstract provider interface
+- `OpenAIClient` — OpenAI-specific implementation
+- `LLMResponse` — normalized response contract
+- `LLMUsage` — normalized token usage
+- `LLMMetadata` — normalized provider/model/request metadata
+- `LLMError` hierarchy — platform-level error contract
+- `map_openai_error()` — provider-to-platform error translation
+- `RetryPolicy` — retry configuration
+- `execute_with_retry()` — centralized retry execution
+- `create_llm_client()` — provider factory
+
+The architectural flow is:
+
+Application
+    |
+    v
+LLMClient Interface
+    |
+    +-------------------+
+    |                   |
+    v                   v
+OpenAIClient       Future Provider
+    |
+    v
+Provider SDK
+    |
+    v
+OpenAI API
+
+
+## 10.2 Why We Introduced an Abstraction
+
+The application should not be tightly coupled to a single LLM provider.
+
+Without an abstraction:
+
+Application
+    |
+    v
+OpenAI SDK
+    |
+    v
+OpenAI API
+
+This makes provider replacement expensive because provider-specific SDK calls, response structures, exceptions, and configuration can spread throughout the application.
+
+With the abstraction:
+
+Application
+    |
+    v
+LLMClient
+    |
+    +--> OpenAIClient
+    |
+    +--> Future AnthropicClient
+    |
+    +--> Future AzureOpenAIClient
+    |
+    +--> Future LocalLLMClient
+
+The application interacts with a stable internal contract instead of provider-specific APIs.
+
+
+## 10.3 Why We Used an Interface
+
+`LLMClient` defines the minimum capability required by the application:
+
+```python
+async def generate(prompt: str) -> LLMResponse
