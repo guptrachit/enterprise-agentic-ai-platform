@@ -1090,3 +1090,392 @@ Future capabilities remain intentionally deferred.
 > and orchestration on top of it.
 
 The later agentic AI layers will depend on this foundation.
+## Component 2 — LLM Configuration and Provider Factory
+
+### 2.1 Objective
+
+The second Layer 1 component introduced configuration-driven LLM provider selection and separated application-level LLM usage from provider-specific implementations.
+
+The objective was to ensure that application code depends on the platform-level `LLMClient` abstraction rather than directly depending on `OpenAIClient`.
+
+This establishes the foundation for supporting multiple LLM providers without requiring changes to business/application logic.
+
+### 2.2 Problem Addressed
+
+Before this component, the repository had an `LLMClient` abstraction and an `OpenAIClient` implementation, but there was no centralized mechanism for selecting the implementation based on configuration.
+
+The application would therefore have needed to know which provider implementation to instantiate.
+
+The architecture was changed to introduce a provider factory.
+
+### 2.3 Architecture Before
+
+    Application
+         |
+         v
+    OpenAIClient
+         |
+         v
+     OpenAI API
+
+This creates unnecessary coupling between application code and a specific LLM provider.
+
+### 2.4 Architecture After
+
+    Application
+         |
+         v
+    create_llm_client()
+         |
+         v
+    LLMClient abstraction
+         |
+         +--------------------+
+         |                    |
+         v                    v
+    OpenAIClient       Future Providers
+         |
+         v
+     OpenAI API
+
+The application interacts with `LLMClient` rather than directly constructing `OpenAIClient`.
+
+### 2.5 Configuration Flow
+
+Configuration is externalized through the existing `Settings` model.
+
+The runtime flow is:
+
+    Environment / .env
+            |
+            v
+        Settings
+            |
+            v
+      Provider Factory
+            |
+            v
+       LLMClient
+            |
+            v
+      Provider Client
+
+The relevant configuration includes:
+
+- `llm_provider`
+- `openai_api_key`
+- `llm_timeout_seconds`
+- `llm_max_retries`
+- `llm_initial_backoff_seconds`
+- `llm_max_backoff_seconds`
+
+### 2.6 Retry Configuration Integration
+
+The existing `Settings` values were previously defined but the `OpenAIClient` was using the default `RetryPolicy()` values directly.
+
+This component changed the OpenAI client so retry behavior is derived from application configuration.
+
+The mapping is:
+
+    llm_max_retries
+            |
+            v
+    RetryPolicy.max_attempts = llm_max_retries + 1
+
+The `+1` is intentional.
+
+For example:
+
+    llm_max_retries = 2
+
+results in:
+
+    Attempt 1 = initial request
+    Attempt 2 = retry #1
+    Attempt 3 = retry #2
+
+Therefore:
+
+    max_attempts = 3
+
+Other configuration values are mapped directly:
+
+    llm_initial_backoff_seconds
+            -> RetryPolicy.initial_backoff_seconds
+
+    llm_max_backoff_seconds
+            -> RetryPolicy.max_backoff_seconds
+
+    llm_timeout_seconds
+            -> RetryPolicy.attempt_timeout_seconds
+
+### 2.7 Provider Factory
+
+A new provider factory was introduced:
+
+    src/agent_platform/llm/factory.py
+
+The factory exposes:
+
+    create_llm_client(settings) -> LLMClient
+
+Current provider selection:
+
+    llm_provider = "openai"
+            |
+            v
+       OpenAIClient
+
+Provider names are normalized using lowercase conversion so values such as:
+
+    openai
+    OPENAI
+    OpenAI
+
+are treated consistently.
+
+Unsupported providers result in:
+
+    LLMConfigurationError
+
+rather than an unclear runtime failure.
+
+### 2.8 Architecture Decisions Made
+
+#### Decision 1 — Application depends on LLMClient
+
+Application/business logic should depend on:
+
+    LLMClient
+
+rather than:
+
+    OpenAIClient
+
+This follows dependency inversion and reduces provider coupling.
+
+#### Decision 2 — Provider selection is configuration-driven
+
+The provider is selected through:
+
+    Settings.llm_provider
+
+rather than hard-coded application logic.
+
+#### Decision 3 — Provider-specific implementations remain isolated
+
+Provider-specific SDK behavior remains inside provider implementations such as:
+
+    OpenAIClient
+
+The factory only selects the implementation.
+
+#### Decision 4 — Unsupported providers fail fast
+
+An unsupported provider configuration raises:
+
+    LLMConfigurationError
+
+This makes configuration problems explicit and easier to diagnose.
+
+#### Decision 5 — Retry configuration is externalized
+
+Retry behavior is controlled by `Settings` instead of hidden hard-coded values inside `OpenAIClient`.
+
+### 2.9 Architecture Decisions Deliberately NOT Made
+
+The following were intentionally not implemented yet:
+
+- Anthropic implementation
+- Azure OpenAI implementation
+- Local model implementation
+- Automatic provider failover
+- Cross-provider load balancing
+- Provider health scoring
+- Dynamic provider routing
+- Model selection service
+- Multi-model routing
+- Geographic provider routing
+
+These are future architectural extensions.
+
+The factory establishes the extension point without prematurely implementing unnecessary providers.
+
+### 2.10 Technical Components Used
+
+#### Pydantic Settings
+
+Used for externalized application configuration.
+
+Why:
+
+- environment-based configuration
+- type validation
+- centralized configuration
+- avoids hard-coded infrastructure settings
+
+#### LLMClient abstraction
+
+Used to define a provider-independent contract.
+
+Why:
+
+- provider abstraction
+- dependency inversion
+- easier testing
+- future multi-provider support
+
+#### Provider Factory
+
+Used to centralize provider instantiation.
+
+Why:
+
+- removes provider construction from application logic
+- creates a single provider-selection boundary
+- enables future providers
+
+#### RetryPolicy
+
+Used to convert application configuration into runtime retry behavior.
+
+Why:
+
+- centralized resilience policy
+- consistent retry behavior
+- configurable timeout and retry limits
+
+#### OpenAI Async Client
+
+Used as the first concrete provider implementation.
+
+Why:
+
+- asynchronous API calls
+- production-oriented integration
+- compatible with the platform's async architecture
+
+### 2.11 Testing Added
+
+Three factory tests were added:
+
+1. OpenAI provider creates `OpenAIClient`
+2. Provider selection is case-insensitive
+3. Unsupported provider raises `LLMConfigurationError`
+
+One OpenAI configuration test was added:
+
+1. Configured retry and timeout values are correctly propagated into `RetryPolicy`
+
+The full test suite increased from:
+
+    30 tests
+
+to:
+
+    34 tests
+
+Final result:
+
+    34 passed
+
+### 2.12 Quality Gates
+
+The component passed all repository quality gates:
+
+    uv run ruff format --check .
+    26 files already formatted
+
+    uv run ruff check .
+    All checks passed!
+
+    uv run pytest
+    34 passed
+
+### 2.13 Interview Questions Addressed
+
+This component prepares for questions such as:
+
+**Q: How would you avoid vendor lock-in when building an enterprise LLM platform?**
+
+Answer direction:
+
+Use a provider-independent `LLMClient` abstraction and isolate provider-specific SDK implementations behind that abstraction.
+
+**Q: How would you support multiple LLM providers?**
+
+Answer direction:
+
+Use configuration-driven provider selection through a factory. Each provider implements the same `LLMClient` contract.
+
+**Q: Why use a factory instead of instantiating OpenAIClient directly?**
+
+Answer direction:
+
+The factory centralizes provider construction and prevents application/business logic from becoming coupled to a specific provider.
+
+**Q: How would you change providers without modifying application logic?**
+
+Answer direction:
+
+Change configuration from one provider to another and provide an implementation of the same `LLMClient` interface.
+
+**Q: Where should retry configuration live?**
+
+Answer direction:
+
+Retry policy should be externally configurable and injected into the provider client rather than hidden in provider-specific implementation defaults.
+
+**Q: What is the difference between max retries and max attempts?**
+
+Answer direction:
+
+Max retries excludes the initial request. Max attempts includes the initial request.
+
+Therefore:
+
+    max_attempts = max_retries + 1
+
+**Q: Why fail fast for unsupported providers?**
+
+Answer direction:
+
+Invalid infrastructure configuration should be detected during client construction rather than producing an ambiguous failure later during an LLM request.
+
+### 2.14 Key Architectural Principle
+
+The central principle introduced by this component is:
+
+> Application logic should depend on stable platform abstractions, while provider-specific implementation details remain behind those abstractions.
+
+This allows the LLM platform to evolve independently from application/business logic.
+
+### 2.15 Current Layer 1 Architecture
+
+At this point Layer 1 contains:
+
+    Application
+        |
+        v
+    LLMClient abstraction
+        |
+        v
+    Provider Factory
+        |
+        v
+    OpenAIClient
+        |
+        +--> Error Mapping
+        |
+        +--> Retry Policy
+        |
+        +--> Retry Executor
+        |
+        +--> Timeout
+        |
+        +--> Usage / Cost Metadata
+        |
+        v
+    OpenAI API
+
+This establishes the initial production-oriented LLM integration boundary.
