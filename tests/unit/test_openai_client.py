@@ -47,6 +47,8 @@ async def test_openai_client_success() -> None:
     assert response.metadata.provider == "openai"
     assert response.metadata.model == "gpt-5-mini"
     assert response.metadata.request_id == "resp_test_123"
+    assert response.metadata.retry_count == 0
+    assert response.metadata.estimated_cost_usd == pytest.approx(0.0000125)
     assert calls == 1
 
 
@@ -80,6 +82,7 @@ async def test_openai_client_retries_transient_error() -> None:
     response = await client.generate("hello")
 
     assert response.text == "hello"
+    assert response.metadata.retry_count == 2
     assert calls == 3
 
 
@@ -138,6 +141,7 @@ async def test_openai_client_retries_rate_limit() -> None:
     response = await client.generate("hello")
 
     assert response.text == "hello"
+    assert response.metadata.retry_count == 1
     assert calls == 2
 
 
@@ -171,6 +175,7 @@ async def test_openai_client_retries_transient_platform_error() -> None:
     response = await client.generate("hello")
 
     assert response.text == "hello"
+    assert response.metadata.retry_count == 1
     assert calls == 2
 
 

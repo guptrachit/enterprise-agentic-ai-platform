@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 
 from agent_platform.config import Settings
 from agent_platform.llm.base import LLMClient, LLMMetadata, LLMResponse, LLMUsage
+from agent_platform.llm.cost import calculate_cost
 from agent_platform.llm.error_mapper import map_openai_error
 from agent_platform.llm.errors import LLMError
 from agent_platform.llm.retry import RetryPolicy
@@ -41,10 +42,13 @@ class OpenAIClient(LLMClient):
 
         start_time = time.perf_counter()
 
-        response = await execute_with_retry(
+        execution = await execute_with_retry(
             lambda: self._request(prompt),
             self.retry_policy,
         )
+
+        response = execution.result
+        retry_count = execution.retry_count
 
         latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -53,17 +57,26 @@ class OpenAIClient(LLMClient):
         input_tokens = usage.input_tokens if usage else 0
         output_tokens = usage.output_tokens if usage else 0
 
+        llm_usage = LLMUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        )
+
+        estimated_cost_usd = calculate_cost(
+            self.model,
+            llm_usage,
+        )
+
         return LLMResponse(
             text=response.output_text,
-            usage=LLMUsage(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens,
-            ),
+            usage=llm_usage,
             metadata=LLMMetadata(
                 provider="openai",
                 model=self.model,
                 latency_ms=latency_ms,
                 request_id=response.id,
+                retry_count=retry_count,
+                estimated_cost_usd=estimated_cost_usd,
             ),
         )

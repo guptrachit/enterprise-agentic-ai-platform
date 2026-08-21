@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from agent_platform.llm.errors import (
     LLMError,
@@ -10,19 +11,37 @@ from agent_platform.llm.errors import (
 from agent_platform.llm.retry import RetryPolicy
 
 
+@dataclass(frozen=True)
+class RetryExecutionResult[T]:
+    """Result of an operation executed with retry protection."""
+
+    result: T
+    attempts: int
+
+    @property
+    def retry_count(self) -> int:
+        """Return the number of retries performed."""
+        return self.attempts - 1
+
+
 async def execute_with_retry[T](
     operation: Callable[[], Awaitable[T]],
     policy: RetryPolicy,
-) -> T:
+) -> RetryExecutionResult[T]:
     """Execute an async operation within a retry time budget."""
 
     start_time = time.monotonic()
 
     for attempt in range(policy.max_attempts):
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 operation(),
                 timeout=policy.attempt_timeout_seconds,
+            )
+
+            return RetryExecutionResult(
+                result=result,
+                attempts=attempt + 1,
             )
 
         except asyncio.CancelledError:

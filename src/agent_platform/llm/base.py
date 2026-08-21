@@ -15,6 +15,8 @@ class LLMMetadata:
     model: str
     latency_ms: float
     request_id: str | None
+    retry_count: int
+    estimated_cost_usd: float
 
 
 @dataclass(frozen=True)

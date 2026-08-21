@@ -26,8 +26,9 @@ async def test_successful_operation_is_not_retried() -> None:
         RetryPolicy(jitter=False),
     )
 
-    assert result == "success"
-    assert calls == 1
+    assert result.result == "success"
+    assert result.attempts == 1
+    assert result.retry_count == 0
 
 
 @pytest.mark.asyncio
@@ -51,7 +52,9 @@ async def test_transient_error_is_retried() -> None:
         ),
     )
 
-    assert result == "success"
+    assert result.result == "success"
+    assert result.attempts == 3
+    assert result.retry_count == 2
     assert calls == 3
 
 
@@ -146,7 +149,9 @@ async def test_retry_budget_allows_retry_when_delay_fits() -> None:
         ),
     )
 
-    assert result == "success"
+    assert result.result == "success"
+    assert result.attempts == 2
+    assert result.retry_count == 1
     assert calls == 2
 
 
