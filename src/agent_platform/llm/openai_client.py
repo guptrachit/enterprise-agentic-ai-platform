@@ -1,4 +1,5 @@
 import time
+from uuid import uuid4
 
 from openai import AsyncOpenAI
 
@@ -41,9 +42,15 @@ class OpenAIClient(LLMClient):
         except Exception as error:
             raise map_openai_error(error) from error
 
-    async def generate(self, prompt: str) -> LLMResponse:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> LLMResponse:
         """Generate an LLM response with retry and normalized metadata."""
 
+        correlation_id = correlation_id or str(uuid4())
         start_time = time.perf_counter()
 
         try:
@@ -78,6 +85,7 @@ class OpenAIClient(LLMClient):
                     provider="openai",
                     model=self.model,
                     request_id=response.id,
+                    correlation_id=correlation_id,
                     success=True,
                     latency_ms=latency_ms,
                     retry_count=retry_count,
@@ -96,6 +104,7 @@ class OpenAIClient(LLMClient):
                     model=self.model,
                     latency_ms=latency_ms,
                     request_id=response.id,
+                    correlation_id=correlation_id,
                     retry_count=retry_count,
                     estimated_cost_usd=estimated_cost_usd,
                 ),
@@ -109,6 +118,7 @@ class OpenAIClient(LLMClient):
                     provider="openai",
                     model=self.model,
                     request_id=None,
+                    correlation_id=correlation_id,
                     success=False,
                     latency_ms=latency_ms,
                     retry_count=None,

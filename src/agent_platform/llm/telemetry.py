@@ -14,6 +14,7 @@ class LLMExecutionEvent:
     provider: str
     model: str
     request_id: str | None
+    correlation_id: str
     success: bool
     latency_ms: float
     retry_count: int | None
@@ -29,6 +30,7 @@ def create_execution_event(
     provider: str,
     model: str,
     request_id: str | None,
+    correlation_id: str,
     success: bool,
     latency_ms: float,
     retry_count: int | None,
@@ -45,6 +47,7 @@ def create_execution_event(
         provider=provider,
         model=model,
         request_id=request_id,
+        correlation_id=correlation_id,
         success=success,
         latency_ms=latency_ms,
         retry_count=retry_count,

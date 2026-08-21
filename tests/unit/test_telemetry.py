@@ -12,6 +12,7 @@ def test_create_execution_event() -> None:
         provider="openai",
         model="gpt-5-mini",
         request_id="resp_123",
+        correlation_id="corr-123",
         success=True,
         latency_ms=123.4,
         retry_count=1,
@@ -24,6 +25,7 @@ def test_create_execution_event() -> None:
     assert event.provider == "openai"
     assert event.model == "gpt-5-mini"
     assert event.request_id == "resp_123"
+    assert event.correlation_id == "corr-123"
     assert event.success is True
     assert event.latency_ms == 123.4
     assert event.retry_count == 1
@@ -40,6 +42,7 @@ def test_log_execution_event(caplog) -> None:
         provider="openai",
         model="gpt-5-mini",
         request_id="resp_123",
+        correlation_id="corr-123",
         success=True,
         latency_ms=100.0,
         retry_count=0,
@@ -73,6 +76,7 @@ def test_failure_event_contains_error_type() -> None:
         provider="openai",
         model="gpt-5-mini",
         request_id=None,
+        correlation_id="corr-failure",
         success=False,
         latency_ms=250.0,
         retry_count=None,

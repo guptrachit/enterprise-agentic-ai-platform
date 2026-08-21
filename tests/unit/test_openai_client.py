@@ -256,3 +256,79 @@ async def test_openai_client_logs_failure_event(caplog) -> None:
     assert any(
         '"error_type": "LLMInvalidRequestError"' in message for message in messages
     )
+
+
+@pytest.mark.asyncio
+async def test_openai_client_preserves_correlation_id() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    response = await client.generate(
+        "hello",
+        correlation_id="corr-test-123",
+    )
+
+    assert response.metadata.correlation_id == "corr-test-123"
+
+
+@pytest.mark.asyncio
+async def test_openai_client_generates_correlation_id() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    response = await client.generate("hello")
+
+    assert response.metadata.correlation_id
+
+
+@pytest.mark.asyncio
+async def test_correlation_id_is_preserved_across_retries() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    client.retry_policy = RetryPolicy(
+        max_attempts=2,
+        initial_backoff_seconds=0,
+        jitter=False,
+    )
+
+    calls = 0
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        nonlocal calls
+        calls += 1
+
+        if calls == 1:
+            raise LLMTransientError()
+
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    response = await client.generate(
+        "hello",
+        correlation_id="corr-retry-123",
+    )
+
+    assert response.metadata.correlation_id == "corr-retry-123"
+    assert response.metadata.retry_count == 1
+    assert calls == 2

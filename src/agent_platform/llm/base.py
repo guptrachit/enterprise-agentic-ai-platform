@@ -15,6 +15,7 @@ class LLMMetadata:
     model: str
     latency_ms: float
     request_id: str | None
+    correlation_id: str
     retry_count: int
     estimated_cost_usd: float
 
@@ -30,6 +31,11 @@ class LLMClient(ABC):
     """Abstract interface for interacting with an LLM provider."""
 
     @abstractmethod
-    async def generate(self, prompt: str) -> LLMResponse:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        correlation_id: str | None = None,
+    ) -> LLMResponse:
         """Generate a response from the LLM."""
         raise NotImplementedError
