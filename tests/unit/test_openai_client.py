@@ -194,3 +194,65 @@ def test_openai_client_uses_configured_retry_policy() -> None:
     assert client.retry_policy.initial_backoff_seconds == 1.5
     assert client.retry_policy.max_backoff_seconds == 7.0
     assert client.retry_policy.attempt_timeout_seconds == 12.0
+
+
+@pytest.mark.asyncio
+async def test_openai_client_logs_success_event(caplog) -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    with caplog.at_level(
+        "INFO",
+        logger="agent_platform.llm",
+    ):
+        await client.generate("hello")
+
+    messages = [record.getMessage() for record in caplog.records]
+
+    assert any('"success": true' in message for message in messages)
+    assert any('"provider": "openai"' in message for message in messages)
+    assert any('"retry_count": 0' in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_openai_client_logs_failure_event(caplog) -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    client.retry_policy = RetryPolicy(
+        max_attempts=1,
+        initial_backoff_seconds=0,
+        jitter=False,
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        raise LLMInvalidRequestError()
+
+    client.client.responses.create = fake_create
+
+    with (
+        caplog.at_level(
+            "INFO",
+            logger="agent_platform.llm",
+        ),
+        pytest.raises(LLMInvalidRequestError),
+    ):
+        await client.generate("hello")
+
+    messages = [record.getMessage() for record in caplog.records]
+
+    assert any('"success": false' in message for message in messages)
+    assert any(
+        '"error_type": "LLMInvalidRequestError"' in message for message in messages
+    )

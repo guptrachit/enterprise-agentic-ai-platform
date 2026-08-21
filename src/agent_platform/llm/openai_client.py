@@ -9,6 +9,10 @@ from agent_platform.llm.error_mapper import map_openai_error
 from agent_platform.llm.errors import LLMError
 from agent_platform.llm.retry import RetryPolicy
 from agent_platform.llm.retry_executor import execute_with_retry
+from agent_platform.llm.telemetry import (
+    create_execution_event,
+    log_execution_event,
+)
 
 
 class OpenAIClient(LLMClient):
@@ -42,41 +46,74 @@ class OpenAIClient(LLMClient):
 
         start_time = time.perf_counter()
 
-        execution = await execute_with_retry(
-            lambda: self._request(prompt),
-            self.retry_policy,
-        )
+        try:
+            execution = await execute_with_retry(
+                lambda: self._request(prompt),
+                self.retry_policy,
+            )
 
-        response = execution.result
-        retry_count = execution.retry_count
+            response = execution.result
+            retry_count = execution.retry_count
 
-        latency_ms = (time.perf_counter() - start_time) * 1000
+            latency_ms = (time.perf_counter() - start_time) * 1000
 
-        usage = response.usage
+            usage = response.usage
 
-        input_tokens = usage.input_tokens if usage else 0
-        output_tokens = usage.output_tokens if usage else 0
+            input_tokens = usage.input_tokens if usage else 0
+            output_tokens = usage.output_tokens if usage else 0
 
-        llm_usage = LLMUsage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=input_tokens + output_tokens,
-        )
+            llm_usage = LLMUsage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=input_tokens + output_tokens,
+            )
 
-        estimated_cost_usd = calculate_cost(
-            self.model,
-            llm_usage,
-        )
+            estimated_cost_usd = calculate_cost(
+                self.model,
+                llm_usage,
+            )
 
-        return LLMResponse(
-            text=response.output_text,
-            usage=llm_usage,
-            metadata=LLMMetadata(
-                provider="openai",
-                model=self.model,
-                latency_ms=latency_ms,
-                request_id=response.id,
-                retry_count=retry_count,
-                estimated_cost_usd=estimated_cost_usd,
-            ),
-        )
+            log_execution_event(
+                create_execution_event(
+                    provider="openai",
+                    model=self.model,
+                    request_id=response.id,
+                    success=True,
+                    latency_ms=latency_ms,
+                    retry_count=retry_count,
+                    input_tokens=llm_usage.input_tokens,
+                    output_tokens=llm_usage.output_tokens,
+                    total_tokens=llm_usage.total_tokens,
+                    estimated_cost_usd=estimated_cost_usd,
+                )
+            )
+
+            return LLMResponse(
+                text=response.output_text,
+                usage=llm_usage,
+                metadata=LLMMetadata(
+                    provider="openai",
+                    model=self.model,
+                    latency_ms=latency_ms,
+                    request_id=response.id,
+                    retry_count=retry_count,
+                    estimated_cost_usd=estimated_cost_usd,
+                ),
+            )
+
+        except LLMError as error:
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            log_execution_event(
+                create_execution_event(
+                    provider="openai",
+                    model=self.model,
+                    request_id=None,
+                    success=False,
+                    latency_ms=latency_ms,
+                    retry_count=None,
+                    error_type=type(error).__name__,
+                )
+            )
+
+            raise
