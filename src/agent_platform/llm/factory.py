@@ -1,11 +1,12 @@
 from agent_platform.config import Settings
 from agent_platform.llm.base import LLMClient
 from agent_platform.llm.errors import LLMConfigurationError
+from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.openai_client import OpenAIClient
 
 
 def create_llm_client(settings: Settings) -> LLMClient:
-    """Create an LLM client based on configured provider."""
+    """Create the default LLM client from application configuration."""
 
     provider = settings.llm_provider.strip().lower()
 
@@ -13,3 +14,20 @@ def create_llm_client(settings: Settings) -> LLMClient:
         return OpenAIClient(settings)
 
     raise LLMConfigurationError(f"Unsupported LLM provider: {settings.llm_provider}")
+
+
+def create_llm_client_for_model(
+    settings: Settings,
+    model: ModelDefinition,
+) -> LLMClient:
+    """Create an LLM client for a routed model definition."""
+
+    provider = model.provider.strip().lower()
+
+    if provider == "openai":
+        return OpenAIClient(
+            settings,
+            model=model.provider_model,
+        )
+
+    raise LLMConfigurationError(f"Unsupported LLM provider: {model.provider}")

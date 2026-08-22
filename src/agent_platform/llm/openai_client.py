@@ -40,9 +40,14 @@ def _extract_refusal(response) -> str | None:
 class OpenAIClient(LLMClient):
     """OpenAI implementation of the LLM client."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        model: str | None = None,
+    ) -> None:
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = settings.llm_model
+        self.model = model or settings.llm_model
         self.retry_policy = RetryPolicy(
             max_attempts=settings.llm_max_retries + 1,
             initial_backoff_seconds=settings.llm_initial_backoff_seconds,
