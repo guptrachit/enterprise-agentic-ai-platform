@@ -177,3 +177,14 @@ class LLMPromptNotFoundError(LLMPromptRegistryError):
         super().__init__(f"Prompt not found: {name} version {version}")
         self.name = name
         self.version = version
+
+
+class LLMPromptActiveVersionNotSetError(LLMPromptRegistryError):
+    """Raised when a prompt has no active version configured."""
+
+    def __init__(
+        self,
+        name: str,
+    ) -> None:
+        super().__init__(f"Active prompt version is not set: {name}")
+        self.name = name
