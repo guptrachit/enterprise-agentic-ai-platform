@@ -147,3 +147,33 @@ class LLMPromptVariableError(LLMPromptError):
             retryable=False,
         )
         self.variable_name = variable_name
+
+
+class LLMPromptRegistryError(LLMPromptError):
+    """Base error for prompt registry failures."""
+
+
+class LLMPromptAlreadyExistsError(LLMPromptRegistryError):
+    """Raised when a prompt name/version is already registered."""
+
+    def __init__(
+        self,
+        name: str,
+        version: str,
+    ) -> None:
+        super().__init__(f"Prompt already registered: {name} version {version}")
+        self.name = name
+        self.version = version
+
+
+class LLMPromptNotFoundError(LLMPromptRegistryError):
+    """Raised when a requested prompt name/version is not registered."""
+
+    def __init__(
+        self,
+        name: str,
+        version: str,
+    ) -> None:
+        super().__init__(f"Prompt not found: {name} version {version}")
+        self.name = name
+        self.version = version
