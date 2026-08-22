@@ -188,3 +188,20 @@ class LLMPromptActiveVersionNotSetError(LLMPromptRegistryError):
     ) -> None:
         super().__init__(f"Active prompt version is not set: {name}")
         self.name = name
+
+
+class LLMPromptLifecycleError(LLMPromptRegistryError):
+    """Raised when a prompt lifecycle transition is not allowed."""
+
+
+class LLMPromptActiveDeprecationError(LLMPromptLifecycleError):
+    """Raised when attempting to deprecate the active prompt version."""
+
+    def __init__(
+        self,
+        name: str,
+        version: str,
+    ) -> None:
+        super().__init__(f"Cannot deprecate active prompt: {name} version {version}")
+        self.name = name
+        self.version = version

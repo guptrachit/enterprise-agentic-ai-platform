@@ -1,9 +1,11 @@
 from agent_platform.llm.errors import (
+    LLMPromptActiveDeprecationError,
     LLMPromptActiveVersionNotSetError,
     LLMPromptAlreadyExistsError,
     LLMPromptNotFoundError,
 )
 from agent_platform.llm.prompt import PromptTemplate
+from agent_platform.llm.prompt_lifecycle import PromptStatus
 
 
 class PromptRegistry:
@@ -12,9 +14,10 @@ class PromptRegistry:
     def __init__(self) -> None:
         self._prompts: dict[tuple[str, str], PromptTemplate] = {}
         self._active_versions: dict[str, str] = {}
+        self._statuses: dict[tuple[str, str], PromptStatus] = {}
 
     def register(self, prompt: PromptTemplate) -> None:
-        """Register a prompt by name and version."""
+        """Register a prompt version in draft state."""
 
         key = (prompt.name, prompt.version)
 
@@ -25,6 +28,7 @@ class PromptRegistry:
             )
 
         self._prompts[key] = prompt
+        self._statuses[key] = PromptStatus.DRAFT
 
     def get(
         self,
@@ -55,18 +59,48 @@ class PromptRegistry:
 
         return tuple(versions)
 
-    def set_active(
+    def get_status(
         self,
         name: str,
         version: str,
-    ) -> None:
-        """Set the active version for a registered prompt."""
+    ) -> PromptStatus:
+        """Return the lifecycle status of a prompt version."""
 
         self.get(
             name,
             version,
         )
 
+        return self._statuses[(name, version)]
+
+    def set_active(
+        self,
+        name: str,
+        version: str,
+    ) -> None:
+        """Promote a registered prompt version to active."""
+
+        self.get(
+            name,
+            version,
+        )
+
+        previous_version = self._active_versions.get(name)
+
+        if previous_version is not None and previous_version != version:
+            previous_key = (
+                name,
+                previous_version,
+            )
+
+            self._statuses[previous_key] = PromptStatus.DEPRECATED
+
+        key = (
+            name,
+            version,
+        )
+
+        self._statuses[key] = PromptStatus.ACTIVE
         self._active_versions[name] = version
 
     def get_active(
@@ -84,3 +118,24 @@ class PromptRegistry:
             name,
             version,
         )
+
+    def deprecate(
+        self,
+        name: str,
+        version: str,
+    ) -> None:
+        """Mark a non-active prompt version as deprecated."""
+
+        self.get(
+            name,
+            version,
+        )
+
+        active_version = self._active_versions.get(name)
+
+        if active_version == version:
+            raise LLMPromptActiveDeprecationError(
+                name,
+                version,
+            )
+        self._statuses[(name, version)] = PromptStatus.DEPRECATED
