@@ -450,3 +450,14 @@ async def test_generic_prompt_has_no_prompt_identity() -> None:
 
     assert response.metadata.prompt_name is None
     assert response.metadata.prompt_version is None
+
+
+def test_openai_client_uses_configured_model() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+            llm_model="configured-model",
+        )
+    )
+
+    assert client.model == "configured-model"

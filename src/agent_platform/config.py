@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     llm_provider: str = "openai"
+    llm_model: str = "gpt-5-mini"
     openai_api_key: str
 
     llm_timeout_seconds: float = 30.0

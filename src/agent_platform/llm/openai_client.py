@@ -42,7 +42,7 @@ class OpenAIClient(LLMClient):
 
     def __init__(self, settings: Settings) -> None:
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self.model = "gpt-5-mini"
+        self.model = settings.llm_model
         self.retry_policy = RetryPolicy(
             max_attempts=settings.llm_max_retries + 1,
             initial_backoff_seconds=settings.llm_initial_backoff_seconds,
