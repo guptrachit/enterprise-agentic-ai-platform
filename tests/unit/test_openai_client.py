@@ -332,3 +332,26 @@ async def test_correlation_id_is_preserved_across_retries() -> None:
     assert response.metadata.correlation_id == "corr-retry-123"
     assert response.metadata.retry_count == 1
     assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_openai_client_preserves_prompt_metadata() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    response = await client.generate(
+        "Classify this ticket.",
+        prompt_name="ticket_classifier",
+        prompt_version="1.0",
+    )
+
+    assert response.metadata.prompt_name == "ticket_classifier"
+    assert response.metadata.prompt_version == "1.0"

@@ -20,6 +20,8 @@ def test_create_execution_event() -> None:
         output_tokens=5,
         total_tokens=15,
         estimated_cost_usd=0.0000125,
+        prompt_name="ticket_classifier",
+        prompt_version="1.0",
     )
 
     assert event.provider == "openai"
@@ -35,6 +37,8 @@ def test_create_execution_event() -> None:
     assert event.estimated_cost_usd == 0.0000125
     assert event.error_type is None
     assert event.timestamp
+    assert event.prompt_name == "ticket_classifier"
+    assert event.prompt_version == "1.0"
 
 
 def test_log_execution_event(caplog) -> None:
