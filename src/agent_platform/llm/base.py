@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from agent_platform.llm.prompt import PromptTemplate
     from agent_platform.llm.structured import StructuredLLMResponse
 
 
@@ -49,6 +50,24 @@ class LLMClient(ABC):
     ) -> LLMResponse:
         """Generate a response from the LLM."""
         raise NotImplementedError
+
+    async def generate_from_template(
+        self,
+        prompt_template: "PromptTemplate",
+        variables: dict[str, object],
+        *,
+        correlation_id: str | None = None,
+    ) -> LLMResponse:
+        """Render and execute a managed prompt template."""
+
+        rendered_prompt = prompt_template.render(**variables)
+
+        return await self.generate(
+            rendered_prompt,
+            correlation_id=correlation_id,
+            prompt_name=prompt_template.name,
+            prompt_version=prompt_template.version,
+        )
 
     @abstractmethod
     async def generate_structured[T: BaseModel](

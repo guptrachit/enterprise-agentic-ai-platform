@@ -355,3 +355,98 @@ async def test_openai_client_preserves_prompt_metadata() -> None:
 
     assert response.metadata.prompt_name == "ticket_classifier"
     assert response.metadata.prompt_version == "1.0"
+
+
+@pytest.mark.asyncio
+async def test_generate_from_template_propagates_prompt_identity() -> None:
+    from agent_platform.llm.prompt import PromptTemplate
+
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    captured_input: str | None = None
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        nonlocal captured_input
+        captured_input = input
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="1.0",
+        template="Classify this ticket: {ticket_text}",
+    )
+
+    response = await client.generate_from_template(
+        prompt,
+        {
+            "ticket_text": "My payment failed.",
+        },
+        correlation_id="corr-managed-prompt-123",
+    )
+
+    assert captured_input == "Classify this ticket: My payment failed."
+    assert response.metadata.prompt_name == "ticket_classifier"
+    assert response.metadata.prompt_version == "1.0"
+    assert response.metadata.correlation_id == "corr-managed-prompt-123"
+
+
+@pytest.mark.asyncio
+async def test_generate_from_template_fails_before_provider_call() -> None:
+    from agent_platform.llm.errors import LLMPromptVariableError
+    from agent_platform.llm.prompt import PromptTemplate
+
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    calls = 0
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        nonlocal calls
+        calls += 1
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="1.0",
+        template="Classify this ticket: {ticket_text}",
+    )
+
+    with pytest.raises(LLMPromptVariableError):
+        await client.generate_from_template(
+            prompt,
+            {},
+        )
+
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_generic_prompt_has_no_prompt_identity() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    response = await client.generate(
+        "Explain Data Vault.",
+    )
+
+    assert response.metadata.prompt_name is None
+    assert response.metadata.prompt_version is None
