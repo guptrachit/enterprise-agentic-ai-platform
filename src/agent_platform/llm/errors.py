@@ -129,3 +129,21 @@ class LLMRefusalError(LLMStructuredOutputError):
             message,
             retryable=False,
         )
+
+
+class LLMPromptError(LLMError):
+    """Base error for prompt construction failures."""
+
+
+class LLMPromptVariableError(LLMPromptError):
+    """Raised when a required prompt variable is missing."""
+
+    def __init__(
+        self,
+        variable_name: str,
+    ) -> None:
+        super().__init__(
+            f"Missing required prompt variable: {variable_name}",
+            retryable=False,
+        )
+        self.variable_name = variable_name
