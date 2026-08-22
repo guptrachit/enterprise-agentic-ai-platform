@@ -2,13 +2,18 @@ import time
 from uuid import uuid4
 
 from openai import AsyncOpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from agent_platform.config import Settings
 from agent_platform.llm.base import LLMClient, LLMMetadata, LLMResponse, LLMUsage
 from agent_platform.llm.cost import calculate_cost
 from agent_platform.llm.error_mapper import map_openai_error
-from agent_platform.llm.errors import LLMError, LLMInvalidRequestError
+from agent_platform.llm.errors import (
+    LLMError,
+    LLMRefusalError,
+    LLMStructuredParseError,
+    LLMStructuredValidationError,
+)
 from agent_platform.llm.retry import RetryPolicy
 from agent_platform.llm.retry_executor import execute_with_retry
 from agent_platform.llm.structured import StructuredLLMResponse
@@ -16,6 +21,20 @@ from agent_platform.llm.telemetry import (
     create_execution_event,
     log_execution_event,
 )
+
+
+def _extract_refusal(response) -> str | None:
+    """Return provider refusal text when present."""
+
+    for output in getattr(response, "output", []):
+        if getattr(output, "type", None) != "message":
+            continue
+
+        for item in getattr(output, "content", []):
+            if getattr(item, "type", None) == "refusal":
+                return getattr(item, "refusal", None)
+
+    return None
 
 
 class OpenAIClient(LLMClient):
@@ -151,6 +170,8 @@ class OpenAIClient(LLMClient):
                 )
             except LLMError:
                 raise
+            except ValidationError as error:
+                raise LLMStructuredValidationError() from error
             except Exception as error:
                 raise map_openai_error(error) from error
 
@@ -179,10 +200,15 @@ class OpenAIClient(LLMClient):
             llm_usage,
         )
 
+        refusal = _extract_refusal(response)
+
+        if refusal is not None:
+            raise LLMRefusalError(refusal)
+
         parsed = response.output_parsed
 
         if parsed is None:
-            raise LLMInvalidRequestError("LLM structured response could not be parsed.")
+            raise LLMStructuredParseError()
 
         metadata = LLMMetadata(
             provider="openai",

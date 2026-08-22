@@ -86,3 +86,46 @@ class LLMRetryBudgetExceededError(LLMError):
             message,
             retryable=False,
         )
+
+
+class LLMStructuredOutputError(LLMError):
+    """Base error for invalid structured LLM output."""
+
+
+class LLMStructuredValidationError(LLMStructuredOutputError):
+    """Raised when structured output fails schema validation."""
+
+    def __init__(
+        self,
+        message: str = "LLM structured response failed validation.",
+    ) -> None:
+        super().__init__(
+            message,
+            retryable=False,
+        )
+
+
+class LLMStructuredParseError(LLMStructuredOutputError):
+    """Raised when no usable structured response can be parsed."""
+
+    def __init__(
+        self,
+        message: str = "LLM structured response could not be parsed.",
+    ) -> None:
+        super().__init__(
+            message,
+            retryable=False,
+        )
+
+
+class LLMRefusalError(LLMStructuredOutputError):
+    """Raised when the model refuses to produce the requested output."""
+
+    def __init__(
+        self,
+        message: str = "LLM refused the request.",
+    ) -> None:
+        super().__init__(
+            message,
+            retryable=False,
+        )
