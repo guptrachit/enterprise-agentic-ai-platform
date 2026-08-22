@@ -223,3 +223,51 @@ class LLMModelPolicyNotFoundError(LLMModelPolicyError):
             retryable=False,
         )
         self.workload = workload
+
+
+class LLMModelRouterError(LLMError):
+    """Base error for model routing failures."""
+
+
+class LLMModelNotFoundError(LLMModelRouterError):
+    """Raised when a logical model cannot be resolved."""
+
+    def __init__(
+        self,
+        model_name: str,
+    ) -> None:
+        super().__init__(
+            f"Model definition not found: {model_name}",
+            retryable=False,
+        )
+        self.model_name = model_name
+
+
+class LLMModelDisabledError(LLMModelRouterError):
+    """Raised when a routed model is disabled."""
+
+    def __init__(
+        self,
+        model_name: str,
+    ) -> None:
+        super().__init__(
+            f"Model is disabled: {model_name}",
+            retryable=False,
+        )
+        self.model_name = model_name
+
+
+class LLMModelWorkloadNotSupportedError(LLMModelRouterError):
+    """Raised when a model does not support the requested workload."""
+
+    def __init__(
+        self,
+        model_name: str,
+        workload: str,
+    ) -> None:
+        super().__init__(
+            f"Model {model_name} does not support workload: {workload}",
+            retryable=False,
+        )
+        self.model_name = model_name
+        self.workload = workload
