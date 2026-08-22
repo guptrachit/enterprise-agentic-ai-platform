@@ -2,14 +2,16 @@ import time
 from uuid import uuid4
 
 from openai import AsyncOpenAI
+from pydantic import BaseModel
 
 from agent_platform.config import Settings
 from agent_platform.llm.base import LLMClient, LLMMetadata, LLMResponse, LLMUsage
 from agent_platform.llm.cost import calculate_cost
 from agent_platform.llm.error_mapper import map_openai_error
-from agent_platform.llm.errors import LLMError
+from agent_platform.llm.errors import LLMError, LLMInvalidRequestError
 from agent_platform.llm.retry import RetryPolicy
 from agent_platform.llm.retry_executor import execute_with_retry
+from agent_platform.llm.structured import StructuredLLMResponse
 from agent_platform.llm.telemetry import (
     create_execution_event,
     log_execution_event,
@@ -127,3 +129,73 @@ class OpenAIClient(LLMClient):
             )
 
             raise
+
+    async def generate_structured[T: BaseModel](
+        self,
+        prompt: str,
+        response_model: type[T],
+        *,
+        correlation_id: str | None = None,
+    ) -> StructuredLLMResponse[T]:
+        """Generate a validated structured response."""
+
+        correlation_id = correlation_id or str(uuid4())
+        start_time = time.perf_counter()
+
+        async def request():
+            try:
+                return await self.client.responses.parse(
+                    model=self.model,
+                    input=prompt,
+                    text_format=response_model,
+                )
+            except LLMError:
+                raise
+            except Exception as error:
+                raise map_openai_error(error) from error
+
+        execution = await execute_with_retry(
+            request,
+            self.retry_policy,
+        )
+
+        response = execution.result
+        retry_count = execution.retry_count
+
+        latency_ms = (time.perf_counter() - start_time) * 1000
+
+        usage = response.usage
+        input_tokens = usage.input_tokens if usage else 0
+        output_tokens = usage.output_tokens if usage else 0
+
+        llm_usage = LLMUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        )
+
+        estimated_cost_usd = calculate_cost(
+            self.model,
+            llm_usage,
+        )
+
+        parsed = response.output_parsed
+
+        if parsed is None:
+            raise LLMInvalidRequestError("LLM structured response could not be parsed.")
+
+        metadata = LLMMetadata(
+            provider="openai",
+            model=self.model,
+            latency_ms=latency_ms,
+            request_id=response.id,
+            correlation_id=correlation_id,
+            retry_count=retry_count,
+            estimated_cost_usd=estimated_cost_usd,
+        )
+
+        return StructuredLLMResponse(
+            parsed=parsed,
+            usage=llm_usage,
+            metadata=metadata,
+        )

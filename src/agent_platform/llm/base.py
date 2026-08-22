@@ -1,6 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent_platform.llm.structured import StructuredLLMResponse
+
 
 @dataclass(frozen=True)
 class LLMUsage:
@@ -38,4 +45,15 @@ class LLMClient(ABC):
         correlation_id: str | None = None,
     ) -> LLMResponse:
         """Generate a response from the LLM."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def generate_structured[T: BaseModel](
+        self,
+        prompt: str,
+        response_model: type[T],
+        *,
+        correlation_id: str | None = None,
+    ) -> "StructuredLLMResponse[T]":
+        """Generate and validate a structured LLM response."""
         raise NotImplementedError
