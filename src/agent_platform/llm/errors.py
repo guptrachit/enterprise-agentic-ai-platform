@@ -205,3 +205,21 @@ class LLMPromptActiveDeprecationError(LLMPromptLifecycleError):
         super().__init__(f"Cannot deprecate active prompt: {name} version {version}")
         self.name = name
         self.version = version
+
+
+class LLMModelPolicyError(LLMError):
+    """Base error for model policy failures."""
+
+
+class LLMModelPolicyNotFoundError(LLMModelPolicyError):
+    """Raised when no model policy exists for a workload."""
+
+    def __init__(
+        self,
+        workload: str,
+    ) -> None:
+        super().__init__(
+            f"No model policy configured for workload: {workload}",
+            retryable=False,
+        )
+        self.workload = workload
