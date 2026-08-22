@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 
 from agent_platform.llm.base import LLMClient, LLMResponse
+from agent_platform.llm.prompt_environment import PromptEnvironment
 from agent_platform.llm.prompt_registry import PromptRegistry
 from agent_platform.llm.structured import StructuredLLMResponse
 
@@ -21,11 +22,15 @@ class PromptExecutionService:
         name: str,
         variables: dict[str, object],
         *,
+        environment: PromptEnvironment = PromptEnvironment.PRODUCTION,
         correlation_id: str | None = None,
     ) -> LLMResponse:
-        """Execute the active version of a managed prompt."""
+        """Execute the active managed prompt for an environment."""
 
-        prompt = self.registry.get_active(name)
+        prompt = self.registry.get_active(
+            name,
+            environment=environment,
+        )
 
         return await self.client.generate_from_template(
             prompt,
@@ -39,11 +44,15 @@ class PromptExecutionService:
         response_model: type[T],
         variables: dict[str, object],
         *,
+        environment: PromptEnvironment = PromptEnvironment.PRODUCTION,
         correlation_id: str | None = None,
     ) -> StructuredLLMResponse[T]:
-        """Execute the active version of a managed structured prompt."""
+        """Execute the active structured prompt for an environment."""
 
-        prompt = self.registry.get_active(name)
+        prompt = self.registry.get_active(
+            name,
+            environment=environment,
+        )
 
         return await self.client.generate_structured_from_template(
             prompt,

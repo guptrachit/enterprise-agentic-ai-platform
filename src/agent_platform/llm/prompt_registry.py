@@ -5,6 +5,7 @@ from agent_platform.llm.errors import (
     LLMPromptNotFoundError,
 )
 from agent_platform.llm.prompt import PromptTemplate
+from agent_platform.llm.prompt_environment import PromptEnvironment
 from agent_platform.llm.prompt_lifecycle import PromptStatus
 
 
@@ -13,7 +14,10 @@ class PromptRegistry:
 
     def __init__(self) -> None:
         self._prompts: dict[tuple[str, str], PromptTemplate] = {}
-        self._active_versions: dict[str, str] = {}
+        self._active_versions: dict[
+            tuple[str, PromptEnvironment],
+            str,
+        ] = {}
         self._statuses: dict[tuple[str, str], PromptStatus] = {}
 
     def register(self, prompt: PromptTemplate) -> None:
@@ -77,15 +81,22 @@ class PromptRegistry:
         self,
         name: str,
         version: str,
+        *,
+        environment: PromptEnvironment = PromptEnvironment.PRODUCTION,
     ) -> None:
-        """Promote a registered prompt version to active."""
+        """Promote a registered prompt version in an environment."""
 
         self.get(
             name,
             version,
         )
 
-        previous_version = self._active_versions.get(name)
+        environment_key = (
+            name,
+            environment,
+        )
+
+        previous_version = self._active_versions.get(environment_key)
 
         if previous_version is not None and previous_version != version:
             previous_key = (
@@ -101,16 +112,23 @@ class PromptRegistry:
         )
 
         self._statuses[key] = PromptStatus.ACTIVE
-        self._active_versions[name] = version
+        self._active_versions[environment_key] = version
 
     def get_active(
         self,
         name: str,
+        *,
+        environment: PromptEnvironment = PromptEnvironment.PRODUCTION,
     ) -> PromptTemplate:
-        """Return the currently active prompt version."""
+        """Return the active prompt version for an environment."""
+
+        environment_key = (
+            name,
+            environment,
+        )
 
         try:
-            version = self._active_versions[name]
+            version = self._active_versions[environment_key]
         except KeyError as error:
             raise LLMPromptActiveVersionNotSetError(name) from error
 
@@ -124,18 +142,26 @@ class PromptRegistry:
         name: str,
         version: str,
     ) -> None:
-        """Mark a non-active prompt version as deprecated."""
+        """Mark a prompt version as deprecated when not active anywhere."""
 
         self.get(
             name,
             version,
         )
 
-        active_version = self._active_versions.get(name)
+        active_environments = [
+            environment
+            for (
+                prompt_name,
+                environment,
+            ), active_version in self._active_versions.items()
+            if prompt_name == name and active_version == version
+        ]
 
-        if active_version == version:
+        if active_environments:
             raise LLMPromptActiveDeprecationError(
                 name,
                 version,
             )
+
         self._statuses[(name, version)] = PromptStatus.DEPRECATED

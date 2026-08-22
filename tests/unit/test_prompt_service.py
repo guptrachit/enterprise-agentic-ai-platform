@@ -142,3 +142,64 @@ async def test_generate_active_fails_before_llm_when_active_not_set() -> None:
         )
 
     client.generate_from_template.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_generate_active_uses_requested_environment() -> None:
+    from agent_platform.llm.prompt_environment import PromptEnvironment
+
+    registry = PromptRegistry()
+
+    qa_prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="2.0",
+        template="QA: {ticket_text}",
+    )
+
+    prod_prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="1.0",
+        template="PROD: {ticket_text}",
+    )
+
+    registry.register(qa_prompt)
+    registry.register(prod_prompt)
+
+    registry.set_active(
+        "ticket_classifier",
+        "2.0",
+        environment=PromptEnvironment.QA,
+    )
+
+    registry.set_active(
+        "ticket_classifier",
+        "1.0",
+        environment=PromptEnvironment.PRODUCTION,
+    )
+
+    client = AsyncMock()
+    expected_response = object()
+    client.generate_from_template.return_value = expected_response
+
+    service = PromptExecutionService(
+        registry,
+        client,
+    )
+
+    result = await service.generate_active(
+        "ticket_classifier",
+        {
+            "ticket_text": "Payment failed.",
+        },
+        environment=PromptEnvironment.QA,
+    )
+
+    assert result is expected_response
+
+    client.generate_from_template.assert_awaited_once_with(
+        qa_prompt,
+        {
+            "ticket_text": "Payment failed.",
+        },
+        correlation_id=None,
+    )
