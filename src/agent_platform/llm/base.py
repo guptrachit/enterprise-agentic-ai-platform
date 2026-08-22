@@ -69,6 +69,26 @@ class LLMClient(ABC):
             prompt_version=prompt_template.version,
         )
 
+    async def generate_structured_from_template[T: BaseModel](
+        self,
+        prompt_template: "PromptTemplate",
+        response_model: type[T],
+        variables: dict[str, object],
+        *,
+        correlation_id: str | None = None,
+    ) -> "StructuredLLMResponse[T]":
+        """Render and execute a managed structured prompt."""
+
+        rendered_prompt = prompt_template.render(**variables)
+
+        return await self.generate_structured(
+            rendered_prompt,
+            response_model,
+            correlation_id=correlation_id,
+            prompt_name=prompt_template.name,
+            prompt_version=prompt_template.version,
+        )
+
     @abstractmethod
     async def generate_structured[T: BaseModel](
         self,
@@ -76,6 +96,8 @@ class LLMClient(ABC):
         response_model: type[T],
         *,
         correlation_id: str | None = None,
+        prompt_name: str | None = None,
+        prompt_version: str | None = None,
     ) -> "StructuredLLMResponse[T]":
         """Generate and validate a structured LLM response."""
         raise NotImplementedError

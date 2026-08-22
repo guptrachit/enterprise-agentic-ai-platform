@@ -153,3 +153,116 @@ async def test_generate_structured_raises_refusal_error() -> None:
             "Classify this request.",
             ClassificationResult,
         )
+
+
+@pytest.mark.asyncio
+async def test_generate_structured_from_template_propagates_prompt_identity() -> None:
+    from agent_platform.llm.prompt import PromptTemplate
+
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    captured_input: str | None = None
+
+    async def fake_parse(
+        *,
+        model: str,
+        input: str,
+        text_format: type[BaseModel],
+    ) -> FakeStructuredResponse:
+        nonlocal captured_input
+        captured_input = input
+        return FakeStructuredResponse()
+
+    client.client.responses.parse = fake_parse
+
+    prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="2.0",
+        template="Classify this ticket: {ticket_text}",
+    )
+
+    response = await client.generate_structured_from_template(
+        prompt,
+        ClassificationResult,
+        {
+            "ticket_text": "My card was charged twice.",
+        },
+        correlation_id="corr-structured-template-123",
+    )
+
+    assert captured_input == ("Classify this ticket: My card was charged twice.")
+    assert response.metadata.prompt_name == "ticket_classifier"
+    assert response.metadata.prompt_version == "2.0"
+    assert response.metadata.correlation_id == "corr-structured-template-123"
+
+
+@pytest.mark.asyncio
+async def test_structured_template_fails_before_provider_call() -> None:
+    from agent_platform.llm.errors import LLMPromptVariableError
+    from agent_platform.llm.prompt import PromptTemplate
+
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    calls = 0
+
+    async def fake_parse(
+        *,
+        model: str,
+        input: str,
+        text_format: type[BaseModel],
+    ) -> FakeStructuredResponse:
+        nonlocal calls
+        calls += 1
+        return FakeStructuredResponse()
+
+    client.client.responses.parse = fake_parse
+
+    prompt = PromptTemplate(
+        name="ticket_classifier",
+        version="2.0",
+        template="Classify this ticket: {ticket_text}",
+    )
+
+    with pytest.raises(LLMPromptVariableError):
+        await client.generate_structured_from_template(
+            prompt,
+            ClassificationResult,
+            {},
+        )
+
+    assert calls == 0
+
+
+@pytest.mark.asyncio
+async def test_generic_structured_prompt_has_no_prompt_identity() -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_parse(
+        *,
+        model: str,
+        input: str,
+        text_format: type[BaseModel],
+    ) -> FakeStructuredResponse:
+        return FakeStructuredResponse()
+
+    client.client.responses.parse = fake_parse
+
+    response = await client.generate_structured(
+        "Classify this request.",
+        ClassificationResult,
+    )
+
+    assert response.metadata.prompt_name is None
+    assert response.metadata.prompt_version is None

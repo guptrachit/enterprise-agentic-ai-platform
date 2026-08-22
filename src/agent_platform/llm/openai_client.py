@@ -163,6 +163,8 @@ class OpenAIClient(LLMClient):
         response_model: type[T],
         *,
         correlation_id: str | None = None,
+        prompt_name: str | None = None,
+        prompt_version: str | None = None,
     ) -> StructuredLLMResponse[T]:
         """Generate a validated structured response."""
 
@@ -226,6 +228,8 @@ class OpenAIClient(LLMClient):
             correlation_id=correlation_id,
             retry_count=retry_count,
             estimated_cost_usd=estimated_cost_usd,
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
         )
 
         return StructuredLLMResponse(
