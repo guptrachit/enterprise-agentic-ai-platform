@@ -45,3 +45,21 @@ def test_model_policy_raises_when_workload_not_configured() -> None:
         match="reasoning",
     ):
         policy.model_for(LLMWorkload.REASONING)
+
+
+def test_model_policy_returns_ordered_fallback_models() -> None:
+    policy = ModelPolicy(
+        assignments={
+            LLMWorkload.CLASSIFICATION: (
+                "classification_primary",
+                "classification_backup",
+            ),
+        }
+    )
+
+    assert policy.models_for(LLMWorkload.CLASSIFICATION) == (
+        "classification_primary",
+        "classification_backup",
+    )
+
+    assert policy.model_for(LLMWorkload.CLASSIFICATION) == "classification_primary"

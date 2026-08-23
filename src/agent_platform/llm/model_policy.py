@@ -6,17 +6,30 @@ from agent_platform.llm.workload import LLMWorkload
 
 @dataclass(frozen=True)
 class ModelPolicy:
-    """Maps logical workloads to logical model names."""
+    """Maps logical workloads to ordered logical model candidates."""
 
-    assignments: dict[LLMWorkload, str]
+    assignments: dict[LLMWorkload, str | tuple[str, ...]]
+
+    def models_for(
+        self,
+        workload: LLMWorkload,
+    ) -> tuple[str, ...]:
+        """Return ordered logical model candidates for a workload."""
+
+        try:
+            assignment = self.assignments[workload]
+        except KeyError as error:
+            raise LLMModelPolicyNotFoundError(workload.value) from error
+
+        if isinstance(assignment, str):
+            return (assignment,)
+
+        return assignment
 
     def model_for(
         self,
         workload: LLMWorkload,
     ) -> str:
-        """Return the logical model name assigned to a workload."""
+        """Return the primary logical model for a workload."""
 
-        try:
-            return self.assignments[workload]
-        except KeyError as error:
-            raise LLMModelPolicyNotFoundError(workload.value) from error
+        return self.models_for(workload)[0]

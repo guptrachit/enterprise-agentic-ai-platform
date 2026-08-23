@@ -116,3 +116,61 @@ def test_model_router_rejects_unsupported_workload() -> None:
         match="reasoning",
     ):
         router.route(LLMWorkload.REASONING)
+
+
+def test_model_router_returns_ordered_valid_candidates() -> None:
+    primary = ModelDefinition(
+        name="primary",
+        provider="openai",
+        provider_model="primary-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+    )
+
+    disabled_backup = ModelDefinition(
+        name="disabled_backup",
+        provider="openai",
+        provider_model="disabled-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+        enabled=False,
+    )
+
+    backup = ModelDefinition(
+        name="backup",
+        provider="openai",
+        provider_model="backup-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+    )
+
+    router = ModelRouter(
+        models={
+            "primary": primary,
+            "disabled_backup": disabled_backup,
+            "backup": backup,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.CLASSIFICATION: (
+                    "primary",
+                    "disabled_backup",
+                    "backup",
+                ),
+            }
+        ),
+    )
+
+    assert router.route_candidates(LLMWorkload.CLASSIFICATION) == (
+        primary,
+        backup,
+    )
