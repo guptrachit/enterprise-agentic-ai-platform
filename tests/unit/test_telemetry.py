@@ -20,10 +20,13 @@ def test_create_execution_event() -> None:
         output_tokens=5,
         total_tokens=15,
         estimated_cost_usd=0.0000125,
-        workload="classification",
-        logical_model="fast_general",
         prompt_name="ticket_classifier",
         prompt_version="1.0",
+        workload="classification",
+        logical_model="fast_general",
+        fallback_used=True,
+        fallback_from="classification_primary",
+        fallback_reason="LLMTransientError",
     )
 
     assert event.provider == "openai"
@@ -37,12 +40,15 @@ def test_create_execution_event() -> None:
     assert event.output_tokens == 5
     assert event.total_tokens == 15
     assert event.estimated_cost_usd == 0.0000125
-    assert event.error_type is None
-    assert event.timestamp
     assert event.prompt_name == "ticket_classifier"
     assert event.prompt_version == "1.0"
     assert event.workload == "classification"
     assert event.logical_model == "fast_general"
+    assert event.fallback_used is True
+    assert event.fallback_from == "classification_primary"
+    assert event.fallback_reason == "LLMTransientError"
+    assert event.error_type is None
+    assert event.timestamp
 
 
 def test_log_execution_event(caplog) -> None:
@@ -60,9 +66,15 @@ def test_log_execution_event(caplog) -> None:
         estimated_cost_usd=0.0000125,
         workload="classification",
         logical_model="fast_general",
+        fallback_used=True,
+        fallback_from="classification_primary",
+        fallback_reason="LLMTransientError",
     )
 
-    with caplog.at_level(logging.INFO, logger="agent_platform.llm"):
+    with caplog.at_level(
+        logging.INFO,
+        logger="agent_platform.llm",
+    ):
         log_execution_event(event)
 
     assert len(caplog.records) == 1
@@ -78,6 +90,9 @@ def test_log_execution_event(caplog) -> None:
     assert payload["success"] is True
     assert payload["workload"] == "classification"
     assert payload["logical_model"] == "fast_general"
+    assert payload["fallback_used"] is True
+    assert payload["fallback_from"] == "classification_primary"
+    assert payload["fallback_reason"] == "LLMTransientError"
     assert payload["retry_count"] == 0
     assert payload["total_tokens"] == 15
     assert payload["estimated_cost_usd"] == 0.0000125
@@ -92,6 +107,11 @@ def test_failure_event_contains_error_type() -> None:
         success=False,
         latency_ms=250.0,
         retry_count=None,
+        workload="classification",
+        logical_model="fast_general",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
         error_type="LLMRateLimitError",
     )
 
@@ -101,3 +121,8 @@ def test_failure_event_contains_error_type() -> None:
     assert event.output_tokens == 0
     assert event.total_tokens == 0
     assert event.estimated_cost_usd == 0.0
+    assert event.workload == "classification"
+    assert event.logical_model == "fast_general"
+    assert event.fallback_used is False
+    assert event.fallback_from is None
+    assert event.fallback_reason is None

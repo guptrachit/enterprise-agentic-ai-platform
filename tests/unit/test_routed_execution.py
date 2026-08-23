@@ -26,6 +26,9 @@ async def test_routed_execution_uses_model_selected_by_policy(
         prompt_version: str | None = None,
         workload: str | None = None,
         logical_model: str | None = None,
+        fallback_used: bool = False,
+        fallback_from: str | None = None,
+        fallback_reason: str | None = None,
     ):
         nonlocal selected_model
         nonlocal captured_prompt
@@ -102,6 +105,9 @@ async def test_routed_execution_preserves_execution_metadata(
         prompt_version: str | None = None,
         workload: str | None = None,
         logical_model: str | None = None,
+        fallback_used: bool = False,
+        fallback_from: str | None = None,
+        fallback_reason: str | None = None,
     ):
         captured["model"] = self.model
         captured["prompt"] = prompt
@@ -110,6 +116,9 @@ async def test_routed_execution_preserves_execution_metadata(
         captured["prompt_version"] = prompt_version
         captured["workload"] = workload
         captured["logical_model"] = logical_model
+        captured["fallback_used"] = fallback_used
+        captured["fallback_from"] = fallback_from
+        captured["fallback_reason"] = fallback_reason
 
         return object()
 
@@ -166,4 +175,7 @@ async def test_routed_execution_preserves_execution_metadata(
         "prompt_version": "2.0",
         "workload": "classification",
         "logical_model": "classification_model",
+        "fallback_used": False,
+        "fallback_from": None,
+        "fallback_reason": None,
     }

@@ -2,6 +2,11 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from agent_platform.llm.errors import (
+    LLMInvalidRequestError,
+    LLMModelDisabledError,
+    LLMTransientError,
+)
 from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.execution_service import LLMExecutionService
 from agent_platform.llm.model_definition import ModelDefinition
@@ -22,10 +27,9 @@ async def test_execution_service_routes_and_executes_request() -> None:
     )
 
     router = Mock()
-    router.route.return_value = model
+    router.route_candidates.return_value = (model,)
 
     client = AsyncMock()
-
     client_factory = Mock(return_value=client)
 
     expected_response = object()
@@ -45,7 +49,7 @@ async def test_execution_service_routes_and_executes_request() -> None:
 
     assert result is expected_response
 
-    router.route.assert_called_once_with(LLMWorkload.CLASSIFICATION)
+    router.route_candidates.assert_called_once_with(LLMWorkload.CLASSIFICATION)
 
     client_factory.assert_called_once_with(model)
 
@@ -56,6 +60,9 @@ async def test_execution_service_routes_and_executes_request() -> None:
         prompt_version=None,
         workload="classification",
         logical_model="fast_general",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
     )
 
 
@@ -73,7 +80,7 @@ async def test_execution_service_preserves_request_metadata() -> None:
     )
 
     router = Mock()
-    router.route.return_value = model
+    router.route_candidates.return_value = (model,)
 
     client = AsyncMock()
     client_factory = Mock(return_value=client)
@@ -105,15 +112,16 @@ async def test_execution_service_preserves_request_metadata() -> None:
         prompt_version="2.0",
         workload="classification",
         logical_model="fast_general",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
     )
 
 
 @pytest.mark.asyncio
 async def test_execution_service_does_not_create_client_when_routing_fails() -> None:
-    from agent_platform.llm.errors import LLMModelDisabledError
-
     router = Mock()
-    router.route.side_effect = LLMModelDisabledError("disabled_model")
+    router.route_candidates.side_effect = LLMModelDisabledError("disabled_model")
 
     client_factory = Mock()
 
@@ -135,8 +143,6 @@ async def test_execution_service_does_not_create_client_when_routing_fails() -> 
 
 @pytest.mark.asyncio
 async def test_execution_service_falls_back_on_retryable_error() -> None:
-    from agent_platform.llm.errors import LLMTransientError
-
     primary = ModelDefinition(
         name="primary",
         provider="openai",
@@ -172,7 +178,7 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
     expected_response = object()
     backup_client.generate.return_value = expected_response
 
-    def client_factory(model):
+    def client_factory(model: ModelDefinition):
         if model is primary:
             return primary_client
 
@@ -192,11 +198,33 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
 
     assert result is expected_response
 
+    primary_client.generate.assert_awaited_once_with(
+        "Classify this ticket.",
+        correlation_id=None,
+        prompt_name=None,
+        prompt_version=None,
+        workload="classification",
+        logical_model="primary",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
+    )
+
+    backup_client.generate.assert_awaited_once_with(
+        "Classify this ticket.",
+        correlation_id=None,
+        prompt_name=None,
+        prompt_version=None,
+        workload="classification",
+        logical_model="backup",
+        fallback_used=True,
+        fallback_from="primary",
+        fallback_reason="LLMTransientError",
+    )
+
 
 @pytest.mark.asyncio
 async def test_execution_service_does_not_fallback_on_non_retryable_error() -> None:
-    from agent_platform.llm.errors import LLMInvalidRequestError
-
     primary = ModelDefinition(
         name="primary",
         provider="openai",
@@ -251,4 +279,17 @@ async def test_execution_service_does_not_fallback_on_non_retryable_error() -> N
         )
 
     assert client_factory.call_count == 1
+
+    primary_client.generate.assert_awaited_once_with(
+        "Classify this ticket.",
+        correlation_id=None,
+        prompt_name=None,
+        prompt_version=None,
+        workload="classification",
+        logical_model="primary",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
+    )
+
     backup_client.generate.assert_not_awaited()

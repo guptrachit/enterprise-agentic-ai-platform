@@ -21,17 +21,43 @@ class LLMExecutionService:
         self,
         request: LLMExecutionRequest,
     ) -> LLMResponse:
-        """Route and execute an LLM request."""
+        """Route and execute an LLM request with eligible model fallback."""
 
-        model = self.router.route(request.workload)
+        models = self.router.route_candidates(request.workload)
 
-        client = self.client_factory(model)
+        last_error: Exception | None = None
+        fallback_from: str | None = None
+        fallback_reason: str | None = None
 
-        return await client.generate(
-            request.prompt,
-            correlation_id=request.correlation_id,
-            prompt_name=request.prompt_name,
-            prompt_version=request.prompt_version,
-            workload=request.workload.value,
-            logical_model=model.name,
-        )
+        for index, model in enumerate(models):
+            client = self.client_factory(model)
+
+            try:
+                return await client.generate(
+                    request.prompt,
+                    correlation_id=request.correlation_id,
+                    prompt_name=request.prompt_name,
+                    prompt_version=request.prompt_version,
+                    workload=request.workload.value,
+                    logical_model=model.name,
+                    fallback_used=index > 0,
+                    fallback_from=fallback_from,
+                    fallback_reason=fallback_reason,
+                )
+            except Exception as error:
+                last_error = error
+
+                if not getattr(
+                    error,
+                    "retryable",
+                    False,
+                ):
+                    raise
+
+                fallback_from = model.name
+                fallback_reason = type(error).__name__
+
+        if last_error is not None:
+            raise last_error
+
+        raise RuntimeError("No routed model candidates were available.")

@@ -51,6 +51,9 @@ class LLMClient(ABC):
         prompt_version: str | None = None,
         workload: str | None = None,
         logical_model: str | None = None,
+        fallback_used: bool = False,
+        fallback_from: str | None = None,
+        fallback_reason: str | None = None,
     ) -> LLMResponse:
         """Generate a response from the LLM."""
         raise NotImplementedError

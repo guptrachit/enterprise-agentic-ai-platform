@@ -27,6 +27,9 @@ class LLMExecutionEvent:
     workload: str | None = None
     logical_model: str | None = None
     error_type: str | None = None
+    fallback_used: bool = False
+    fallback_from: str | None = None
+    fallback_reason: str | None = None
 
 
 def create_execution_event(
@@ -47,6 +50,9 @@ def create_execution_event(
     workload: str | None = None,
     logical_model: str | None = None,
     error_type: str | None = None,
+    fallback_used: bool = False,
+    fallback_from: str | None = None,
+    fallback_reason: str | None = None,
 ) -> LLMExecutionEvent:
     """Create a normalized LLM execution telemetry event."""
 
@@ -67,12 +73,15 @@ def create_execution_event(
         prompt_version=prompt_version,
         workload=workload,
         logical_model=logical_model,
+        fallback_used=fallback_used,
+        fallback_from=fallback_from,
+        fallback_reason=fallback_reason,
         error_type=error_type,
     )
 
 
 def log_execution_event(event: LLMExecutionEvent) -> None:
-    """Write an LLM execution event as structured JSON."""
+    """Write an LLM execution event as tructured JSON."""
 
     logger.info(
         "llm_execution %s",

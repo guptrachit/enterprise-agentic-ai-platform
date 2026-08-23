@@ -77,6 +77,9 @@ class OpenAIClient(LLMClient):
         prompt_version: str | None = None,
         workload: str | None = None,
         logical_model: str | None = None,
+        fallback_used: bool = False,
+        fallback_from: str | None = None,
+        fallback_reason: str | None = None,
     ) -> LLMResponse:
         """Generate an LLM response with retry and normalized metadata."""
 
@@ -127,6 +130,9 @@ class OpenAIClient(LLMClient):
                     prompt_version=prompt_version,
                     workload=workload,
                     logical_model=logical_model,
+                    fallback_used=fallback_used,
+                    fallback_from=fallback_from,
+                    fallback_reason=fallback_reason,
                 )
             )
 
@@ -165,6 +171,9 @@ class OpenAIClient(LLMClient):
                     workload=workload,
                     logical_model=logical_model,
                     error_type=type(error).__name__,
+                    fallback_used=fallback_used,
+                    fallback_from=fallback_from,
+                    fallback_reason=fallback_reason,
                 )
             )
 
