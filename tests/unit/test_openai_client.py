@@ -461,3 +461,44 @@ def test_openai_client_uses_configured_model() -> None:
     )
 
     assert client.model == "configured-model"
+
+
+@pytest.mark.asyncio
+async def test_openai_client_logs_routed_execution_metadata(
+    caplog,
+) -> None:
+    client = OpenAIClient(
+        Settings(
+            openai_api_key="test-key",
+        )
+    )
+
+    async def fake_create(*, model: str, input: str) -> FakeResponse:
+        return FakeResponse()
+
+    client.client.responses.create = fake_create
+
+    with caplog.at_level(
+        "INFO",
+        logger="agent_platform.llm",
+    ):
+        await client.generate(
+            "Classify this ticket.",
+            workload="classification",
+            logical_model="fast_general",
+        )
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("llm_execution ")
+    ]
+
+    assert len(messages) == 1
+
+    import json
+
+    payload = json.loads(messages[0].removeprefix("llm_execution "))
+
+    assert payload["workload"] == "classification"
+    assert payload["logical_model"] == "fast_general"

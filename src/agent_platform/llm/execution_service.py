@@ -32,4 +32,6 @@ class LLMExecutionService:
             correlation_id=request.correlation_id,
             prompt_name=request.prompt_name,
             prompt_version=request.prompt_version,
+            workload=request.workload.value,
+            logical_model=model.name,
         )

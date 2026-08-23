@@ -27,6 +27,8 @@ class LLMMetadata:
     estimated_cost_usd: float
     prompt_name: str | None = None
     prompt_version: str | None = None
+    workload: str | None = None
+    logical_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,8 @@ class LLMClient(ABC):
         correlation_id: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
+        workload: str | None = None,
+        logical_model: str | None = None,
     ) -> LLMResponse:
         """Generate a response from the LLM."""
         raise NotImplementedError

@@ -75,6 +75,8 @@ class OpenAIClient(LLMClient):
         correlation_id: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
+        workload: str | None = None,
+        logical_model: str | None = None,
     ) -> LLMResponse:
         """Generate an LLM response with retry and normalized metadata."""
 
@@ -123,6 +125,8 @@ class OpenAIClient(LLMClient):
                     estimated_cost_usd=estimated_cost_usd,
                     prompt_name=prompt_name,
                     prompt_version=prompt_version,
+                    workload=workload,
+                    logical_model=logical_model,
                 )
             )
 
@@ -139,6 +143,8 @@ class OpenAIClient(LLMClient):
                     estimated_cost_usd=estimated_cost_usd,
                     prompt_name=prompt_name,
                     prompt_version=prompt_version,
+                    workload=workload,
+                    logical_model=logical_model,
                 ),
             )
 
@@ -156,6 +162,8 @@ class OpenAIClient(LLMClient):
                     retry_count=None,
                     prompt_name=prompt_name,
                     prompt_version=prompt_version,
+                    workload=workload,
+                    logical_model=logical_model,
                     error_type=type(error).__name__,
                 )
             )

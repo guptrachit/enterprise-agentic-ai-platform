@@ -24,6 +24,8 @@ async def test_routed_execution_uses_model_selected_by_policy(
         correlation_id: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
+        workload: str | None = None,
+        logical_model: str | None = None,
     ):
         nonlocal selected_model
         nonlocal captured_prompt
@@ -98,12 +100,16 @@ async def test_routed_execution_preserves_execution_metadata(
         correlation_id: str | None = None,
         prompt_name: str | None = None,
         prompt_version: str | None = None,
+        workload: str | None = None,
+        logical_model: str | None = None,
     ):
         captured["model"] = self.model
         captured["prompt"] = prompt
         captured["correlation_id"] = correlation_id
         captured["prompt_name"] = prompt_name
         captured["prompt_version"] = prompt_version
+        captured["workload"] = workload
+        captured["logical_model"] = logical_model
 
         return object()
 
@@ -158,4 +164,6 @@ async def test_routed_execution_preserves_execution_metadata(
         "correlation_id": "corr-456",
         "prompt_name": "ticket_classifier",
         "prompt_version": "2.0",
+        "workload": "classification",
+        "logical_model": "classification_model",
     }

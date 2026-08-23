@@ -14,12 +14,14 @@ def test_create_execution_event() -> None:
         request_id="resp_123",
         correlation_id="corr-123",
         success=True,
-        latency_ms=123.4,
-        retry_count=1,
+        latency_ms=100.0,
+        retry_count=0,
         input_tokens=10,
         output_tokens=5,
         total_tokens=15,
         estimated_cost_usd=0.0000125,
+        workload="classification",
+        logical_model="fast_general",
         prompt_name="ticket_classifier",
         prompt_version="1.0",
     )
@@ -29,8 +31,8 @@ def test_create_execution_event() -> None:
     assert event.request_id == "resp_123"
     assert event.correlation_id == "corr-123"
     assert event.success is True
-    assert event.latency_ms == 123.4
-    assert event.retry_count == 1
+    assert event.latency_ms == 100.0
+    assert event.retry_count == 0
     assert event.input_tokens == 10
     assert event.output_tokens == 5
     assert event.total_tokens == 15
@@ -39,6 +41,8 @@ def test_create_execution_event() -> None:
     assert event.timestamp
     assert event.prompt_name == "ticket_classifier"
     assert event.prompt_version == "1.0"
+    assert event.workload == "classification"
+    assert event.logical_model == "fast_general"
 
 
 def test_log_execution_event(caplog) -> None:
@@ -54,6 +58,8 @@ def test_log_execution_event(caplog) -> None:
         output_tokens=5,
         total_tokens=15,
         estimated_cost_usd=0.0000125,
+        workload="classification",
+        logical_model="fast_general",
     )
 
     with caplog.at_level(logging.INFO, logger="agent_platform.llm"):
@@ -70,6 +76,8 @@ def test_log_execution_event(caplog) -> None:
     assert payload["provider"] == "openai"
     assert payload["model"] == "gpt-5-mini"
     assert payload["success"] is True
+    assert payload["workload"] == "classification"
+    assert payload["logical_model"] == "fast_general"
     assert payload["retry_count"] == 0
     assert payload["total_tokens"] == 15
     assert payload["estimated_cost_usd"] == 0.0000125

@@ -24,6 +24,8 @@ class LLMExecutionEvent:
     estimated_cost_usd: float
     prompt_name: str | None = None
     prompt_version: str | None = None
+    workload: str | None = None
+    logical_model: str | None = None
     error_type: str | None = None
 
 
@@ -42,6 +44,8 @@ def create_execution_event(
     estimated_cost_usd: float = 0.0,
     prompt_name: str | None = None,
     prompt_version: str | None = None,
+    workload: str | None = None,
+    logical_model: str | None = None,
     error_type: str | None = None,
 ) -> LLMExecutionEvent:
     """Create a normalized LLM execution telemetry event."""
@@ -61,6 +65,8 @@ def create_execution_event(
         estimated_cost_usd=estimated_cost_usd,
         prompt_name=prompt_name,
         prompt_version=prompt_version,
+        workload=workload,
+        logical_model=logical_model,
         error_type=error_type,
     )
 

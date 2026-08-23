@@ -54,6 +54,8 @@ async def test_execution_service_routes_and_executes_request() -> None:
         correlation_id=None,
         prompt_name=None,
         prompt_version=None,
+        workload="classification",
+        logical_model="fast_general",
     )
 
 
@@ -101,6 +103,8 @@ async def test_execution_service_preserves_request_metadata() -> None:
         correlation_id="corr-123",
         prompt_name="ticket_classifier",
         prompt_version="2.0",
+        workload="classification",
+        logical_model="fast_general",
     )
 
 
