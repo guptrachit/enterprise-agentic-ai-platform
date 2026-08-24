@@ -23,7 +23,30 @@ class LLMExecutionService:
     ) -> LLMResponse:
         """Route and execute an LLM request with eligible model fallback."""
 
-        models = self.router.route_candidates(request.workload)
+        models = self.router.route_candidates(
+            request.workload,
+            constraints=request.constraints,
+        )
+
+        constraints = request.constraints
+
+        allowed_providers = (
+            tuple(sorted(constraints.allowed_providers))
+            if constraints is not None and constraints.allowed_providers is not None
+            else None
+        )
+
+        max_cost_tier = (
+            constraints.max_cost_tier.name.lower()
+            if constraints is not None and constraints.max_cost_tier is not None
+            else None
+        )
+
+        max_latency_tier = (
+            constraints.max_latency_tier.name.lower()
+            if constraints is not None and constraints.max_latency_tier is not None
+            else None
+        )
 
         last_error: Exception | None = None
         fallback_from: str | None = None
@@ -43,6 +66,9 @@ class LLMExecutionService:
                     fallback_used=index > 0,
                     fallback_from=fallback_from,
                     fallback_reason=fallback_reason,
+                    allowed_providers=allowed_providers,
+                    max_cost_tier=max_cost_tier,
+                    max_latency_tier=max_latency_tier,
                 )
             except Exception as error:
                 last_error = error

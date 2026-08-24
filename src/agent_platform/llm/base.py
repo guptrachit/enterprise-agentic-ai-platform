@@ -54,6 +54,9 @@ class LLMClient(ABC):
         fallback_used: bool = False,
         fallback_from: str | None = None,
         fallback_reason: str | None = None,
+        allowed_providers: tuple[str, ...] | None = None,
+        max_cost_tier: str | None = None,
+        max_latency_tier: str | None = None,
     ) -> LLMResponse:
         """Generate a response from the LLM."""
         raise NotImplementedError

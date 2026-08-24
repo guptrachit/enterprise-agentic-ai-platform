@@ -80,6 +80,9 @@ class OpenAIClient(LLMClient):
         fallback_used: bool = False,
         fallback_from: str | None = None,
         fallback_reason: str | None = None,
+        allowed_providers: tuple[str, ...] | None = None,
+        max_cost_tier: str | None = None,
+        max_latency_tier: str | None = None,
     ) -> LLMResponse:
         """Generate an LLM response with retry and normalized metadata."""
 
@@ -133,6 +136,9 @@ class OpenAIClient(LLMClient):
                     fallback_used=fallback_used,
                     fallback_from=fallback_from,
                     fallback_reason=fallback_reason,
+                    allowed_providers=allowed_providers,
+                    max_cost_tier=max_cost_tier,
+                    max_latency_tier=max_latency_tier,
                 )
             )
 

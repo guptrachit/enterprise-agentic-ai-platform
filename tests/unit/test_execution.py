@@ -27,3 +27,25 @@ def test_execution_request_preserves_workload_and_metadata() -> None:
     assert request.correlation_id == "corr-123"
     assert request.prompt_name == "ticket_classifier"
     assert request.prompt_version == "2.0"
+
+
+def test_execution_request_preserves_routing_constraints() -> None:
+    from agent_platform.llm.model_tier import ModelCostTier
+    from agent_platform.llm.routing_constraints import RoutingConstraints
+
+    constraints = RoutingConstraints(
+        allowed_providers=frozenset(
+            {
+                "openai",
+            }
+        ),
+        max_cost_tier=ModelCostTier.LOW,
+    )
+
+    request = LLMExecutionRequest(
+        prompt="Classify this ticket.",
+        workload=LLMWorkload.CLASSIFICATION,
+        constraints=constraints,
+    )
+
+    assert request.constraints is constraints

@@ -27,6 +27,9 @@ def test_create_execution_event() -> None:
         fallback_used=True,
         fallback_from="classification_primary",
         fallback_reason="LLMTransientError",
+        allowed_providers=("openai",),
+        max_cost_tier="low",
+        max_latency_tier="medium",
     )
 
     assert event.provider == "openai"
@@ -49,6 +52,9 @@ def test_create_execution_event() -> None:
     assert event.fallback_reason == "LLMTransientError"
     assert event.error_type is None
     assert event.timestamp
+    assert event.allowed_providers == ("openai",)
+    assert event.max_cost_tier == "low"
+    assert event.max_latency_tier == "medium"
 
 
 def test_log_execution_event(caplog) -> None:
@@ -69,6 +75,9 @@ def test_log_execution_event(caplog) -> None:
         fallback_used=True,
         fallback_from="classification_primary",
         fallback_reason="LLMTransientError",
+        allowed_providers=("openai",),
+        max_cost_tier="low",
+        max_latency_tier="medium",
     )
 
     with caplog.at_level(
@@ -96,6 +105,9 @@ def test_log_execution_event(caplog) -> None:
     assert payload["retry_count"] == 0
     assert payload["total_tokens"] == 15
     assert payload["estimated_cost_usd"] == 0.0000125
+    assert payload["allowed_providers"] == ["openai"]
+    assert payload["max_cost_tier"] == "low"
+    assert payload["max_latency_tier"] == "medium"
 
 
 def test_failure_event_contains_error_type() -> None:

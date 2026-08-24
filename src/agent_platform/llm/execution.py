@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
 
@@ -12,3 +13,4 @@ class LLMExecutionRequest:
     correlation_id: str | None = None
     prompt_name: str | None = None
     prompt_version: str | None = None
+    constraints: RoutingConstraints | None = None

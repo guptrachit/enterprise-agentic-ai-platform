@@ -29,6 +29,9 @@ async def test_routed_execution_uses_model_selected_by_policy(
         fallback_used: bool = False,
         fallback_from: str | None = None,
         fallback_reason: str | None = None,
+        allowed_providers: tuple[str, ...] | None = None,
+        max_cost_tier: str | None = None,
+        max_latency_tier: str | None = None,
     ):
         nonlocal selected_model
         nonlocal captured_prompt
@@ -108,6 +111,9 @@ async def test_routed_execution_preserves_execution_metadata(
         fallback_used: bool = False,
         fallback_from: str | None = None,
         fallback_reason: str | None = None,
+        allowed_providers: tuple[str, ...] | None = None,
+        max_cost_tier: str | None = None,
+        max_latency_tier: str | None = None,
     ):
         captured["model"] = self.model
         captured["prompt"] = prompt
@@ -119,7 +125,9 @@ async def test_routed_execution_preserves_execution_metadata(
         captured["fallback_used"] = fallback_used
         captured["fallback_from"] = fallback_from
         captured["fallback_reason"] = fallback_reason
-
+        captured["allowed_providers"] = allowed_providers
+        captured["max_cost_tier"] = max_cost_tier
+        captured["max_latency_tier"] = max_latency_tier
         return object()
 
     monkeypatch.setattr(
@@ -178,4 +186,7 @@ async def test_routed_execution_preserves_execution_metadata(
         "fallback_used": False,
         "fallback_from": None,
         "fallback_reason": None,
+        "allowed_providers": None,
+        "max_cost_tier": None,
+        "max_latency_tier": None,
     }

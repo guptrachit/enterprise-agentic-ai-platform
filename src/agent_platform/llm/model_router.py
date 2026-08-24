@@ -1,15 +1,17 @@
 from agent_platform.llm.errors import (
+    LLMModelConstraintViolationError,
     LLMModelDisabledError,
     LLMModelNotFoundError,
     LLMModelWorkloadNotSupportedError,
 )
 from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.model_policy import ModelPolicy
+from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
 
 class ModelRouter:
-    """Resolve workloads to validated model definitions."""
+    """Routes LLM workloads to configured model definitions."""
 
     def __init__(
         self,
@@ -22,14 +24,19 @@ class ModelRouter:
     def route(
         self,
         workload: LLMWorkload,
+        constraints: RoutingConstraints | None = None,
     ) -> ModelDefinition:
-        """Resolve and validate the model for a workload."""
+        """Resolve and validate the primary model for a workload."""
 
-        return self.route_candidates(workload)[0]
+        return self.route_candidates(
+            workload,
+            constraints=constraints,
+        )[0]
 
     def route_candidates(
         self,
         workload: LLMWorkload,
+        constraints: RoutingConstraints | None = None,
     ) -> tuple[ModelDefinition, ...]:
         """Resolve all valid model candidates for a workload."""
 
@@ -49,6 +56,9 @@ class ModelRouter:
             if not model.supports_workload(workload):
                 continue
 
+            if constraints is not None and not constraints.allows(model):
+                continue
+
             models.append(model)
 
         if not models:
@@ -57,8 +67,19 @@ class ModelRouter:
             if primary_model not in self.models:
                 raise LLMModelNotFoundError(primary_model)
 
-            if not self.models[primary_model].enabled:
+            primary = self.models[primary_model]
+
+            if not primary.enabled:
                 raise LLMModelDisabledError(primary_model)
+
+            if not primary.supports_workload(workload):
+                raise LLMModelWorkloadNotSupportedError(
+                    primary_model,
+                    workload.value,
+                )
+
+            if constraints is not None:
+                raise LLMModelConstraintViolationError(workload.value)
 
             raise LLMModelWorkloadNotSupportedError(
                 primary_model,

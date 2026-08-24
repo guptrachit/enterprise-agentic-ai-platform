@@ -174,3 +174,150 @@ def test_model_router_returns_ordered_valid_candidates() -> None:
         primary,
         backup,
     )
+
+
+def test_model_router_filters_candidates_by_cost_constraint() -> None:
+    from agent_platform.llm.model_tier import ModelCostTier
+    from agent_platform.llm.routing_constraints import RoutingConstraints
+
+    expensive = ModelDefinition(
+        name="expensive",
+        provider="openai",
+        provider_model="expensive-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    cheap = ModelDefinition(
+        name="cheap",
+        provider="openai",
+        provider_model="cheap-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+        cost_tier=ModelCostTier.LOW,
+    )
+
+    router = ModelRouter(
+        models={
+            "expensive": expensive,
+            "cheap": cheap,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.CLASSIFICATION: (
+                    "expensive",
+                    "cheap",
+                ),
+            }
+        ),
+    )
+
+    result = router.route_candidates(
+        LLMWorkload.CLASSIFICATION,
+        constraints=RoutingConstraints(
+            max_cost_tier=ModelCostTier.LOW,
+        ),
+    )
+
+    assert result == (cheap,)
+
+
+def test_model_router_filters_candidates_by_provider_constraint() -> None:
+    from agent_platform.llm.routing_constraints import RoutingConstraints
+
+    openai_model = ModelDefinition(
+        name="openai_model",
+        provider="openai",
+        provider_model="openai-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+    )
+
+    other_model = ModelDefinition(
+        name="other_model",
+        provider="other",
+        provider_model="other-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+    )
+
+    router = ModelRouter(
+        models={
+            "openai_model": openai_model,
+            "other_model": other_model,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.CLASSIFICATION: (
+                    "openai_model",
+                    "other_model",
+                ),
+            }
+        ),
+    )
+
+    result = router.route_candidates(
+        LLMWorkload.CLASSIFICATION,
+        constraints=RoutingConstraints(
+            allowed_providers=frozenset(
+                {
+                    "openai",
+                }
+            )
+        ),
+    )
+
+    assert result == (openai_model,)
+
+
+def test_model_router_raises_when_constraints_reject_all_candidates() -> None:
+    from agent_platform.llm.errors import LLMModelConstraintViolationError
+    from agent_platform.llm.model_tier import ModelCostTier
+    from agent_platform.llm.routing_constraints import RoutingConstraints
+
+    model = ModelDefinition(
+        name="expensive",
+        provider="openai",
+        provider_model="expensive-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    router = ModelRouter(
+        models={
+            "expensive": model,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.CLASSIFICATION: "expensive",
+            }
+        ),
+    )
+
+    with pytest.raises(
+        LLMModelConstraintViolationError,
+        match="classification",
+    ):
+        router.route_candidates(
+            LLMWorkload.CLASSIFICATION,
+            constraints=RoutingConstraints(
+                max_cost_tier=ModelCostTier.LOW,
+            ),
+        )

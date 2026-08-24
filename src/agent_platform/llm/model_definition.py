@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 
+from agent_platform.llm.model_tier import (
+    ModelCostTier,
+    ModelLatencyTier,
+)
 from agent_platform.llm.workload import LLMWorkload
 
 
@@ -13,6 +17,8 @@ class ModelDefinition:
     workloads: frozenset[LLMWorkload]
     supports_structured_output: bool = True
     enabled: bool = True
+    cost_tier: ModelCostTier = ModelCostTier.MEDIUM
+    latency_tier: ModelLatencyTier = ModelLatencyTier.STANDARD
 
     def supports_workload(
         self,

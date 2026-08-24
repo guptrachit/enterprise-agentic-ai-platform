@@ -49,7 +49,10 @@ async def test_execution_service_routes_and_executes_request() -> None:
 
     assert result is expected_response
 
-    router.route_candidates.assert_called_once_with(LLMWorkload.CLASSIFICATION)
+    router.route_candidates.assert_called_once_with(
+        LLMWorkload.CLASSIFICATION,
+        constraints=None,
+    )
 
     client_factory.assert_called_once_with(model)
 
@@ -63,6 +66,9 @@ async def test_execution_service_routes_and_executes_request() -> None:
         fallback_used=False,
         fallback_from=None,
         fallback_reason=None,
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
     )
 
 
@@ -115,6 +121,9 @@ async def test_execution_service_preserves_request_metadata() -> None:
         fallback_used=False,
         fallback_from=None,
         fallback_reason=None,
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
     )
 
 
@@ -208,6 +217,9 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
         fallback_used=False,
         fallback_from=None,
         fallback_reason=None,
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
     )
 
     backup_client.generate.assert_awaited_once_with(
@@ -220,6 +232,9 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
         fallback_used=True,
         fallback_from="primary",
         fallback_reason="LLMTransientError",
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
     )
 
 
@@ -290,6 +305,59 @@ async def test_execution_service_does_not_fallback_on_non_retryable_error() -> N
         fallback_used=False,
         fallback_from=None,
         fallback_reason=None,
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
     )
 
     backup_client.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execution_service_passes_routing_constraints() -> None:
+    from agent_platform.llm.model_tier import ModelCostTier
+    from agent_platform.llm.routing_constraints import RoutingConstraints
+
+    model = ModelDefinition(
+        name="fast_general",
+        provider="openai",
+        provider_model="gpt-5-mini",
+        workloads=frozenset(
+            {
+                LLMWorkload.CLASSIFICATION,
+            }
+        ),
+    )
+
+    router = Mock()
+    router.route_candidates.return_value = (model,)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+    )
+
+    constraints = RoutingConstraints(
+        allowed_providers=frozenset(
+            {
+                "openai",
+            }
+        ),
+        max_cost_tier=ModelCostTier.LOW,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Classify this ticket.",
+            workload=LLMWorkload.CLASSIFICATION,
+            constraints=constraints,
+        )
+    )
+
+    router.route_candidates.assert_called_once_with(
+        LLMWorkload.CLASSIFICATION,
+        constraints=constraints,
+    )

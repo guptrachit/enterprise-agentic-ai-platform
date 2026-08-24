@@ -271,3 +271,17 @@ class LLMModelWorkloadNotSupportedError(LLMModelRouterError):
         )
         self.model_name = model_name
         self.workload = workload
+
+
+class LLMModelConstraintViolationError(LLMModelRouterError):
+    """Raised when routing constraints reject all valid model candidates."""
+
+    def __init__(
+        self,
+        workload: str,
+    ) -> None:
+        super().__init__(
+            f"No model candidates satisfy routing constraints for workload: {workload}",
+            retryable=False,
+        )
+        self.workload = workload
