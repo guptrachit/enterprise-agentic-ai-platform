@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -6,10 +7,16 @@ from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.model_router import ModelRouter
 from agent_platform.llm.routing_decision import RoutingDecision
+from agent_platform.llm.routing_metrics import RoutingMetrics
+from agent_platform.llm.routing_metrics_exporter import (
+    RoutingMetricsExporter,
+)
 from agent_platform.llm.telemetry import (
     create_routing_decision_event,
     log_routing_decision_event,
 )
+
+logger = logging.getLogger("agent_platform.llm")
 
 
 @dataclass(frozen=True)
@@ -29,9 +36,13 @@ class LLMExecutionService:
         self,
         router: ModelRouter,
         client_factory: Callable[[ModelDefinition], LLMClient],
+        metrics: RoutingMetrics | None = None,
+        metrics_exporter: RoutingMetricsExporter | None = None,
     ) -> None:
         self.router = router
         self.client_factory = client_factory
+        self.metrics = metrics
+        self.metrics_exporter = metrics_exporter
 
     async def execute(
         self,
@@ -143,6 +154,15 @@ class LLMExecutionService:
                     preferred_latency_tier=preferred_latency_tier,
                 )
 
+                self._record_metrics(
+                    request=request,
+                    decision=decision,
+                    executed_model=model,
+                    routing_reason_codes=routing_reason_codes,
+                    success=True,
+                    fallback_used=index > 0,
+                )
+
                 log_routing_decision_event(
                     create_routing_decision_event(
                         workload=request.workload.value,
@@ -173,6 +193,15 @@ class LLMExecutionService:
                     "retryable",
                     False,
                 ):
+                    self._record_metrics(
+                        request=request,
+                        decision=decision,
+                        executed_model=model,
+                        routing_reason_codes=routing_reason_codes,
+                        success=False,
+                        fallback_used=index > 0,
+                    )
+
                     log_routing_decision_event(
                         create_routing_decision_event(
                             workload=request.workload.value,
@@ -195,6 +224,17 @@ class LLMExecutionService:
                 fallback_reason = type(error).__name__
 
         if last_error is not None:
+            fallback_used = len(models) > 1
+
+            self._record_metrics(
+                request=request,
+                decision=decision,
+                executed_model=last_attempted_model,
+                routing_reason_codes=routing_reason_codes,
+                success=False,
+                fallback_used=fallback_used,
+            )
+
             log_routing_decision_event(
                 create_routing_decision_event(
                     workload=request.workload.value,
@@ -208,7 +248,7 @@ class LLMExecutionService:
                         if last_attempted_model is not None
                         else None
                     ),
-                    fallback_used=len(models) > 1,
+                    fallback_used=fallback_used,
                     success=False,
                     correlation_id=request.correlation_id,
                     error_type=type(last_error).__name__,
@@ -218,3 +258,46 @@ class LLMExecutionService:
             raise last_error
 
         raise RuntimeError("No routed model candidates were available.")
+
+    def _record_metrics(
+        self,
+        *,
+        request: LLMExecutionRequest,
+        decision: RoutingDecision,
+        executed_model: ModelDefinition | None,
+        routing_reason_codes: tuple[str, ...],
+        success: bool,
+        fallback_used: bool,
+    ) -> None:
+        """Record metrics and isolate exporter failures."""
+
+        if self.metrics is None:
+            return
+
+        self.metrics.record_request(
+            workload=request.workload.value,
+            selected_model=decision.selected_model.name,
+            executed_model=(
+                executed_model.name if executed_model is not None else None
+            ),
+            routing_reason_codes=routing_reason_codes,
+            success=success,
+            fallback_used=fallback_used,
+        )
+
+        if self.metrics_exporter is None:
+            return
+
+        try:
+            self.metrics_exporter.export(self.metrics.snapshot())
+        except Exception as error:
+            self.metrics.record_export_failure()
+
+            logger.warning(
+                "llm_routing_metrics_export_failed "
+                "exporter=%s error_type=%s "
+                "failure_count=%s",
+                type(self.metrics_exporter).__name__,
+                type(error).__name__,
+                self.metrics.metrics_export_failures,
+            )

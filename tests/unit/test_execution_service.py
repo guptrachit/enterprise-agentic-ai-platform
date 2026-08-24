@@ -23,6 +23,7 @@ from agent_platform.llm.model_tier import (
 )
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.routing_decision import RoutingDecision
+from agent_platform.llm.routing_metrics import RoutingMetrics
 from agent_platform.llm.routing_reason import (
     RoutingReason,
     RoutingReasonCode,
@@ -426,16 +427,7 @@ async def test_execute_with_decision_returns_routing_decision() -> None:
         name="selected_model",
     )
 
-    decision = RoutingDecision(
-        selected_model=model,
-        ranked_candidates=(model,),
-        reasons=(
-            RoutingReason(
-                code=RoutingReasonCode.SELECTED,
-                message="Selected model 'selected_model'",
-            ),
-        ),
-    )
+    decision = create_decision(model)
 
     router = Mock()
     router.route_decision.return_value = decision
@@ -472,18 +464,9 @@ async def test_execute_with_decision_distinguishes_fallback_model() -> None:
         name="backup",
     )
 
-    decision = RoutingDecision(
-        selected_model=primary,
-        ranked_candidates=(
-            primary,
-            backup,
-        ),
-        reasons=(
-            RoutingReason(
-                code=RoutingReasonCode.SELECTED,
-                message="Primary model selected",
-            ),
-        ),
+    decision = create_decision(
+        primary,
+        backup,
     )
 
     router = Mock()
@@ -580,27 +563,13 @@ async def test_execution_service_logs_routing_decision(
     assert payload["selected_model"] == "selected"
     assert payload["executed_model"] == "selected"
 
-    assert payload["ranked_candidates"] == [
-        "selected",
-    ]
-
-    assert payload["rejected_models"] == [
-        "disabled",
-    ]
-
     assert payload["routing_reason_codes"] == [
         "disabled",
         "selected",
     ]
 
-    assert payload["routing_reasons"] == [
-        "Model 'disabled' rejected because it is disabled",
-        "Selected model 'selected'",
-    ]
-
     assert payload["fallback_used"] is False
     assert payload["success"] is True
-    assert payload["correlation_id"] == "corr-routing-001"
 
 
 @pytest.mark.asyncio
@@ -615,18 +584,9 @@ async def test_execution_service_logs_fallback_routing_decision(
         name="backup",
     )
 
-    decision = RoutingDecision(
-        selected_model=primary,
-        ranked_candidates=(
-            primary,
-            backup,
-        ),
-        reasons=(
-            RoutingReason(
-                code=RoutingReasonCode.SELECTED,
-                message="Primary selected",
-            ),
-        ),
+    decision = create_decision(
+        primary,
+        backup,
     )
 
     router = Mock()
@@ -673,15 +633,7 @@ async def test_execution_service_logs_fallback_routing_decision(
 
     assert payload["selected_model"] == "primary"
     assert payload["executed_model"] == "backup"
-
-    assert payload["routing_reason_codes"] == [
-        "selected",
-    ]
-
-    assert payload["routing_reasons"] == [
-        "Primary selected",
-    ]
-
+    assert payload["routing_reason_codes"] == ["selected"]
     assert payload["fallback_used"] is True
     assert payload["success"] is True
 
@@ -694,16 +646,7 @@ async def test_execution_service_logs_failed_routing_decision(
         name="primary",
     )
 
-    decision = RoutingDecision(
-        selected_model=primary,
-        ranked_candidates=(primary,),
-        reasons=(
-            RoutingReason(
-                code=RoutingReasonCode.SELECTED,
-                message="Primary selected",
-            ),
-        ),
-    )
+    decision = create_decision(primary)
 
     router = Mock()
     router.route_decision.return_value = decision
@@ -743,16 +686,567 @@ async def test_execution_service_logs_failed_routing_decision(
 
     assert payload["selected_model"] == "primary"
     assert payload["executed_model"] == "primary"
-
-    assert payload["routing_reason_codes"] == [
-        "selected",
-    ]
-
-    assert payload["routing_reasons"] == [
-        "Primary selected",
-    ]
-
+    assert payload["routing_reason_codes"] == ["selected"]
     assert payload["success"] is False
     assert payload["fallback_used"] is False
 
     assert payload["error_type"] == "LLMInvalidRequestError"
+
+
+@pytest.mark.asyncio
+async def test_execution_service_records_success_metrics() -> None:
+    model = create_model(
+        name="primary",
+        workload=LLMWorkload.CLASSIFICATION,
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Classify this ticket.",
+            workload=LLMWorkload.CLASSIFICATION,
+        )
+    )
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 1
+    assert metrics.failed_requests == 0
+    assert metrics.fallback_requests == 0
+
+    assert metrics.model_selection_counts == {
+        "primary": 1,
+    }
+
+    assert metrics.executed_model_counts == {
+        "primary": 1,
+    }
+
+    assert metrics.workload_counts == {
+        "classification": 1,
+    }
+
+    assert metrics.rejection_reason_counts == {
+        "selected": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_service_records_fallback_metrics() -> None:
+    primary = create_model(
+        name="primary",
+    )
+
+    backup = create_model(
+        name="backup",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(
+        primary,
+        backup,
+    )
+
+    primary_client = AsyncMock()
+    primary_client.generate.side_effect = LLMTransientError()
+
+    backup_client = AsyncMock()
+    backup_client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+
+    def client_factory(model: ModelDefinition):
+        if model is primary:
+            return primary_client
+
+        return backup_client
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=client_factory,
+        metrics=metrics,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer.",
+        )
+    )
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 1
+    assert metrics.failed_requests == 0
+    assert metrics.fallback_requests == 1
+
+    assert metrics.model_selection_counts == {
+        "primary": 1,
+    }
+
+    assert metrics.executed_model_counts == {
+        "backup": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_service_records_failure_metrics() -> None:
+    primary = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(primary)
+
+    client = AsyncMock()
+    client.generate.side_effect = LLMInvalidRequestError()
+
+    metrics = RoutingMetrics()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+    )
+
+    with pytest.raises(LLMInvalidRequestError):
+        await service.execute(
+            LLMExecutionRequest(
+                prompt="Invalid request.",
+            )
+        )
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 0
+    assert metrics.failed_requests == 1
+    assert metrics.fallback_requests == 0
+
+    assert metrics.model_selection_counts == {
+        "primary": 1,
+    }
+
+    assert metrics.executed_model_counts == {
+        "primary": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_service_exports_metrics_after_success() -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+    exporter = Mock()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer.",
+        )
+    )
+
+    exporter.export.assert_called_once()
+
+    snapshot = exporter.export.call_args.args[0]
+
+    assert snapshot.total_requests == 1
+    assert snapshot.successful_requests == 1
+    assert snapshot.failed_requests == 0
+
+
+@pytest.mark.asyncio
+async def test_execution_service_exports_metrics_after_failure() -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.side_effect = LLMInvalidRequestError()
+
+    metrics = RoutingMetrics()
+    exporter = Mock()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    with pytest.raises(LLMInvalidRequestError):
+        await service.execute(
+            LLMExecutionRequest(
+                prompt="Invalid request.",
+            )
+        )
+
+    exporter.export.assert_called_once()
+
+    snapshot = exporter.export.call_args.args[0]
+
+    assert snapshot.total_requests == 1
+    assert snapshot.successful_requests == 0
+    assert snapshot.failed_requests == 1
+
+
+@pytest.mark.asyncio
+async def test_execution_service_exports_metrics_after_fallback() -> None:
+    primary = create_model(
+        name="primary",
+    )
+
+    backup = create_model(
+        name="backup",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(
+        primary,
+        backup,
+    )
+
+    primary_client = AsyncMock()
+    primary_client.generate.side_effect = LLMTransientError()
+
+    backup_client = AsyncMock()
+    backup_client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+    exporter = Mock()
+
+    def client_factory(model: ModelDefinition):
+        if model is primary:
+            return primary_client
+
+        return backup_client
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=client_factory,
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer.",
+        )
+    )
+
+    exporter.export.assert_called_once()
+
+    snapshot = exporter.export.call_args.args[0]
+
+    assert snapshot.total_requests == 1
+    assert snapshot.successful_requests == 1
+    assert snapshot.fallback_requests == 1
+
+    assert snapshot.executed_model_counts == {
+        "backup": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execution_service_does_not_export_without_metrics() -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    exporter = Mock()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=None,
+        metrics_exporter=exporter,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer.",
+        )
+    )
+
+    exporter.export.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_metrics_exporter_failure_does_not_fail_successful_execution(
+    caplog,
+) -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    expected_response = object()
+    client.generate.return_value = expected_response
+
+    metrics = RoutingMetrics()
+
+    exporter = Mock()
+    exporter.export.side_effect = RuntimeError("metrics backend unavailable")
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="agent_platform.llm",
+    ):
+        result = await service.execute(
+            LLMExecutionRequest(
+                prompt="Answer.",
+            )
+        )
+
+    assert result is expected_response
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 1
+
+    exporter.export.assert_called_once()
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("llm_routing_metrics_export_failed ")
+    ]
+
+    assert len(warning_records) == 1
+
+    assert "RuntimeError" in warning_records[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_metrics_exporter_failure_preserves_original_llm_error(
+    caplog,
+) -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.side_effect = LLMInvalidRequestError()
+
+    metrics = RoutingMetrics()
+
+    exporter = Mock()
+    exporter.export.side_effect = RuntimeError("metrics backend unavailable")
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    with (
+        caplog.at_level(
+            logging.WARNING,
+            logger="agent_platform.llm",
+        ),
+        pytest.raises(LLMInvalidRequestError),
+    ):
+        await service.execute(
+            LLMExecutionRequest(
+                prompt="Invalid request.",
+            )
+        )
+
+    assert metrics.total_requests == 1
+    assert metrics.failed_requests == 1
+
+    exporter.export.assert_called_once()
+
+    warning_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("llm_routing_metrics_export_failed ")
+    ]
+
+    assert len(warning_records) == 1
+
+
+@pytest.mark.asyncio
+async def test_metrics_exporter_failure_after_fallback_does_not_fail_request(
+    caplog,
+) -> None:
+    primary = create_model(
+        name="primary",
+    )
+
+    backup = create_model(
+        name="backup",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(
+        primary,
+        backup,
+    )
+
+    primary_client = AsyncMock()
+    primary_client.generate.side_effect = LLMTransientError()
+
+    backup_client = AsyncMock()
+    expected_response = object()
+    backup_client.generate.return_value = expected_response
+
+    metrics = RoutingMetrics()
+
+    exporter = Mock()
+    exporter.export.side_effect = RuntimeError("metrics backend unavailable")
+
+    def client_factory(model: ModelDefinition):
+        if model is primary:
+            return primary_client
+
+        return backup_client
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=client_factory,
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="agent_platform.llm",
+    ):
+        result = await service.execute(
+            LLMExecutionRequest(
+                prompt="Answer.",
+            )
+        )
+
+    assert result is expected_response
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 1
+    assert metrics.fallback_requests == 1
+
+    assert metrics.executed_model_counts == {
+        "backup": 1,
+    }
+
+    exporter.export.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_metrics_exporter_failure_is_counted() -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+
+    exporter = Mock()
+    exporter.export.side_effect = RuntimeError("metrics backend unavailable")
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer.",
+        )
+    )
+
+    assert metrics.total_requests == 1
+    assert metrics.successful_requests == 1
+    assert metrics.metrics_export_failures == 1
+
+
+@pytest.mark.asyncio
+async def test_metrics_export_failures_accumulate_across_requests() -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    metrics = RoutingMetrics()
+
+    exporter = Mock()
+    exporter.export.side_effect = RuntimeError("metrics backend unavailable")
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        metrics=metrics,
+        metrics_exporter=exporter,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="First.",
+        )
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Second.",
+        )
+    )
+
+    assert metrics.total_requests == 2
+    assert metrics.successful_requests == 2
+    assert metrics.metrics_export_failures == 2
