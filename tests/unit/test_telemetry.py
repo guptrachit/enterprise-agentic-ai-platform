@@ -30,6 +30,11 @@ def test_create_execution_event() -> None:
         allowed_providers=("openai",),
         max_cost_tier="low",
         max_latency_tier="medium",
+        prefer_lower_cost=True,
+        prefer_lower_latency=True,
+        preferred_providers=("openai", "anthropic"),
+        preferred_cost_tier="low",
+        preferred_latency_tier="fast",
     )
 
     assert event.provider == "openai"
@@ -51,10 +56,15 @@ def test_create_execution_event() -> None:
     assert event.fallback_from == "classification_primary"
     assert event.fallback_reason == "LLMTransientError"
     assert event.error_type is None
-    assert event.timestamp
     assert event.allowed_providers == ("openai",)
     assert event.max_cost_tier == "low"
     assert event.max_latency_tier == "medium"
+    assert event.prefer_lower_cost is True
+    assert event.prefer_lower_latency is True
+    assert event.preferred_providers == ("openai", "anthropic")
+    assert event.preferred_cost_tier == "low"
+    assert event.preferred_latency_tier == "fast"
+    assert event.timestamp
 
 
 def test_log_execution_event(caplog) -> None:
@@ -78,6 +88,11 @@ def test_log_execution_event(caplog) -> None:
         allowed_providers=("openai",),
         max_cost_tier="low",
         max_latency_tier="medium",
+        prefer_lower_cost=True,
+        prefer_lower_latency=True,
+        preferred_providers=("openai", "anthropic"),
+        preferred_cost_tier="low",
+        preferred_latency_tier="fast",
     )
 
     with caplog.at_level(
@@ -108,6 +123,11 @@ def test_log_execution_event(caplog) -> None:
     assert payload["allowed_providers"] == ["openai"]
     assert payload["max_cost_tier"] == "low"
     assert payload["max_latency_tier"] == "medium"
+    assert payload["prefer_lower_cost"] is True
+    assert payload["prefer_lower_latency"] is True
+    assert payload["preferred_providers"] == ["openai", "anthropic"]
+    assert payload["preferred_cost_tier"] == "low"
+    assert payload["preferred_latency_tier"] == "fast"
 
 
 def test_failure_event_contains_error_type() -> None:
@@ -119,11 +139,6 @@ def test_failure_event_contains_error_type() -> None:
         success=False,
         latency_ms=250.0,
         retry_count=None,
-        workload="classification",
-        logical_model="fast_general",
-        fallback_used=False,
-        fallback_from=None,
-        fallback_reason=None,
         error_type="LLMRateLimitError",
     )
 
@@ -133,8 +148,8 @@ def test_failure_event_contains_error_type() -> None:
     assert event.output_tokens == 0
     assert event.total_tokens == 0
     assert event.estimated_cost_usd == 0.0
-    assert event.workload == "classification"
-    assert event.logical_model == "fast_general"
-    assert event.fallback_used is False
-    assert event.fallback_from is None
-    assert event.fallback_reason is None
+    assert event.prefer_lower_cost is False
+    assert event.prefer_lower_latency is False
+    assert event.preferred_providers is None
+    assert event.preferred_cost_tier is None
+    assert event.preferred_latency_tier is None

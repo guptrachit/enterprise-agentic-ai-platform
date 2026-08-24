@@ -1,12 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from agent_platform.llm.prompt import PromptTemplate
-    from agent_platform.llm.structured import StructuredLLMResponse
 
 
 @dataclass(frozen=True)
@@ -57,57 +50,10 @@ class LLMClient(ABC):
         allowed_providers: tuple[str, ...] | None = None,
         max_cost_tier: str | None = None,
         max_latency_tier: str | None = None,
+        prefer_lower_cost: bool = False,
+        prefer_lower_latency: bool = False,
+        preferred_providers: tuple[str, ...] | None = None,
+        preferred_cost_tier: str | None = None,
+        preferred_latency_tier: str | None = None,
     ) -> LLMResponse:
-        """Generate a response from the LLM."""
-        raise NotImplementedError
-
-    async def generate_from_template(
-        self,
-        prompt_template: "PromptTemplate",
-        variables: dict[str, object],
-        *,
-        correlation_id: str | None = None,
-    ) -> LLMResponse:
-        """Render and execute a managed prompt template."""
-
-        rendered_prompt = prompt_template.render(**variables)
-
-        return await self.generate(
-            rendered_prompt,
-            correlation_id=correlation_id,
-            prompt_name=prompt_template.name,
-            prompt_version=prompt_template.version,
-        )
-
-    async def generate_structured_from_template[T: BaseModel](
-        self,
-        prompt_template: "PromptTemplate",
-        response_model: type[T],
-        variables: dict[str, object],
-        *,
-        correlation_id: str | None = None,
-    ) -> "StructuredLLMResponse[T]":
-        """Render and execute a managed structured prompt."""
-
-        rendered_prompt = prompt_template.render(**variables)
-
-        return await self.generate_structured(
-            rendered_prompt,
-            response_model,
-            correlation_id=correlation_id,
-            prompt_name=prompt_template.name,
-            prompt_version=prompt_template.version,
-        )
-
-    @abstractmethod
-    async def generate_structured[T: BaseModel](
-        self,
-        prompt: str,
-        response_model: type[T],
-        *,
-        correlation_id: str | None = None,
-        prompt_name: str | None = None,
-        prompt_version: str | None = None,
-    ) -> "StructuredLLMResponse[T]":
-        """Generate and validate a structured LLM response."""
-        raise NotImplementedError
+        """Generate a provider-neutral LLM response."""

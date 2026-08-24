@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from agent_platform.llm.model_capability import ModelCapability
+from agent_platform.llm.model_preference import ModelPreference
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
@@ -16,3 +17,4 @@ class LLMExecutionRequest:
     prompt_version: str | None = None
     constraints: RoutingConstraints | None = None
     required_capabilities: frozenset[ModelCapability] = frozenset()
+    preference: ModelPreference | None = None

@@ -27,9 +27,11 @@ class LLMExecutionService:
             request.workload,
             constraints=request.constraints,
             required_capabilities=request.required_capabilities,
+            preference=request.preference,
         )
 
         constraints = request.constraints
+        preference = request.preference
 
         allowed_providers = (
             tuple(sorted(constraints.allowed_providers))
@@ -46,6 +48,32 @@ class LLMExecutionService:
         max_latency_tier = (
             constraints.max_latency_tier.name.lower()
             if constraints is not None and constraints.max_latency_tier is not None
+            else None
+        )
+
+        prefer_lower_cost = (
+            preference.prefer_lower_cost if preference is not None else False
+        )
+
+        prefer_lower_latency = (
+            preference.prefer_lower_latency if preference is not None else False
+        )
+
+        preferred_providers = (
+            preference.preferred_providers
+            if preference is not None and preference.preferred_providers
+            else None
+        )
+
+        preferred_cost_tier = (
+            preference.preferred_cost_tier.name.lower()
+            if preference is not None and preference.preferred_cost_tier is not None
+            else None
+        )
+
+        preferred_latency_tier = (
+            preference.preferred_latency_tier.name.lower()
+            if preference is not None and preference.preferred_latency_tier is not None
             else None
         )
 
@@ -70,6 +98,11 @@ class LLMExecutionService:
                     allowed_providers=allowed_providers,
                     max_cost_tier=max_cost_tier,
                     max_latency_tier=max_latency_tier,
+                    prefer_lower_cost=prefer_lower_cost,
+                    prefer_lower_latency=prefer_lower_latency,
+                    preferred_providers=preferred_providers,
+                    preferred_cost_tier=preferred_cost_tier,
+                    preferred_latency_tier=preferred_latency_tier,
                 )
             except Exception as error:
                 last_error = error

@@ -1,5 +1,6 @@
 from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.model_capability import ModelCapability
+from agent_platform.llm.model_preference import ModelPreference
 from agent_platform.llm.model_tier import ModelCostTier
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
@@ -17,6 +18,7 @@ def test_execution_request_defaults() -> None:
     assert request.prompt_version is None
     assert request.constraints is None
     assert request.required_capabilities == frozenset()
+    assert request.preference is None
 
 
 def test_execution_request_preserves_metadata() -> None:
@@ -69,3 +71,18 @@ def test_execution_request_preserves_required_capabilities() -> None:
     )
 
     assert request.required_capabilities == required
+
+
+def test_execution_request_preserves_model_preference() -> None:
+    preference = ModelPreference(
+        prefer_lower_cost=True,
+        preferred_providers=("openai",),
+    )
+
+    request = LLMExecutionRequest(
+        prompt="Process this request.",
+        workload=LLMWorkload.GENERAL,
+        preference=preference,
+    )
+
+    assert request.preference is preference

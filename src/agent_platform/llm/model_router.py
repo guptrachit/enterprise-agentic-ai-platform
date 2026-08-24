@@ -6,6 +6,8 @@ from agent_platform.llm.errors import (
 from agent_platform.llm.model_capability import ModelCapability
 from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.model_policy import ModelPolicy
+from agent_platform.llm.model_preference import ModelPreference
+from agent_platform.llm.model_ranker import ModelRanker
 from agent_platform.llm.model_registry import ModelRegistry
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
@@ -19,6 +21,7 @@ class ModelRouter:
         models: dict[str, ModelDefinition] | None = None,
         policy: ModelPolicy | None = None,
         registry: ModelRegistry | None = None,
+        ranker: ModelRanker | None = None,
     ) -> None:
         if registry is not None:
             self.registry = registry
@@ -29,19 +32,22 @@ class ModelRouter:
             raise ValueError("Model policy is required.")
 
         self.policy = policy
+        self.ranker = ranker or ModelRanker()
 
     def route(
         self,
         workload: LLMWorkload,
         constraints: RoutingConstraints | None = None,
         required_capabilities: frozenset[ModelCapability] = frozenset(),
+        preference: ModelPreference | None = None,
     ) -> ModelDefinition:
-        """Resolve the primary valid model for a workload."""
+        """Resolve the highest-ranked valid model for a workload."""
 
         return self.route_candidates(
             workload,
             constraints=constraints,
             required_capabilities=required_capabilities,
+            preference=preference,
         )[0]
 
     def route_candidates(
@@ -49,8 +55,9 @@ class ModelRouter:
         workload: LLMWorkload,
         constraints: RoutingConstraints | None = None,
         required_capabilities: frozenset[ModelCapability] = frozenset(),
+        preference: ModelPreference | None = None,
     ) -> tuple[ModelDefinition, ...]:
-        """Resolve all valid model candidates for a workload."""
+        """Resolve and rank all valid model candidates for a workload."""
 
         model_names = self.policy.models_for(workload)
 
@@ -98,4 +105,7 @@ class ModelRouter:
                 workload.value,
             )
 
-        return tuple(models)
+        return self.ranker.rank(
+            tuple(models),
+            preference,
+        )

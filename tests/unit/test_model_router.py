@@ -9,18 +9,47 @@ from agent_platform.llm.errors import (
 from agent_platform.llm.model_capability import ModelCapability
 from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.model_policy import ModelPolicy
+from agent_platform.llm.model_preference import ModelPreference
 from agent_platform.llm.model_registry import ModelRegistry
 from agent_platform.llm.model_router import ModelRouter
-from agent_platform.llm.model_tier import ModelCostTier
+from agent_platform.llm.model_tier import (
+    ModelCostTier,
+    ModelLatencyTier,
+)
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
 
+def create_model(
+    *,
+    name: str,
+    provider: str = "openai",
+    workloads: frozenset[LLMWorkload] | None = None,
+    enabled: bool = True,
+    cost_tier: ModelCostTier = ModelCostTier.MEDIUM,
+    latency_tier: ModelLatencyTier = ModelLatencyTier.STANDARD,
+    capabilities: frozenset[ModelCapability] | None = None,
+) -> ModelDefinition:
+    return ModelDefinition(
+        name=name,
+        provider=provider,
+        provider_model=f"{name}-provider-model",
+        workloads=workloads
+        or frozenset(
+            {
+                LLMWorkload.GENERAL,
+            }
+        ),
+        enabled=enabled,
+        cost_tier=cost_tier,
+        latency_tier=latency_tier,
+        capabilities=capabilities,
+    )
+
+
 def test_model_router_returns_expected_model() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="fast_general",
-        provider="openai",
-        provider_model="gpt-5-mini",
         workloads=frozenset(
             {
                 LLMWorkload.GENERAL,
@@ -40,9 +69,7 @@ def test_model_router_returns_expected_model() -> None:
         ),
     )
 
-    result = router.route(LLMWorkload.CLASSIFICATION)
-
-    assert result is model
+    assert router.route(LLMWorkload.CLASSIFICATION) is model
 
 
 def test_model_router_raises_when_model_not_found() -> None:
@@ -63,10 +90,8 @@ def test_model_router_raises_when_model_not_found() -> None:
 
 
 def test_model_router_rejects_disabled_model() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="disabled_model",
-        provider="openai",
-        provider_model="gpt-5-mini",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -94,10 +119,8 @@ def test_model_router_rejects_disabled_model() -> None:
 
 
 def test_model_router_rejects_unsupported_workload() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="general_model",
-        provider="openai",
-        provider_model="gpt-5-mini",
         workloads=frozenset(
             {
                 LLMWorkload.GENERAL,
@@ -124,10 +147,8 @@ def test_model_router_rejects_unsupported_workload() -> None:
 
 
 def test_model_router_returns_ordered_valid_candidates() -> None:
-    primary = ModelDefinition(
+    primary = create_model(
         name="primary",
-        provider="openai",
-        provider_model="primary-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -135,10 +156,8 @@ def test_model_router_returns_ordered_valid_candidates() -> None:
         ),
     )
 
-    disabled_backup = ModelDefinition(
+    disabled_backup = create_model(
         name="disabled_backup",
-        provider="openai",
-        provider_model="disabled-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -147,10 +166,8 @@ def test_model_router_returns_ordered_valid_candidates() -> None:
         enabled=False,
     )
 
-    backup = ModelDefinition(
+    backup = create_model(
         name="backup",
-        provider="openai",
-        provider_model="backup-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -182,10 +199,8 @@ def test_model_router_returns_ordered_valid_candidates() -> None:
 
 
 def test_model_router_filters_candidates_by_cost_constraint() -> None:
-    expensive = ModelDefinition(
+    expensive = create_model(
         name="expensive",
-        provider="openai",
-        provider_model="expensive-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -194,10 +209,8 @@ def test_model_router_filters_candidates_by_cost_constraint() -> None:
         cost_tier=ModelCostTier.HIGH,
     )
 
-    cheap = ModelDefinition(
+    cheap = create_model(
         name="cheap",
-        provider="openai",
-        provider_model="cheap-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -232,10 +245,9 @@ def test_model_router_filters_candidates_by_cost_constraint() -> None:
 
 
 def test_model_router_filters_candidates_by_provider_constraint() -> None:
-    openai_model = ModelDefinition(
+    openai_model = create_model(
         name="openai_model",
         provider="openai",
-        provider_model="openai-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -243,10 +255,9 @@ def test_model_router_filters_candidates_by_provider_constraint() -> None:
         ),
     )
 
-    other_model = ModelDefinition(
+    other_model = create_model(
         name="other_model",
         provider="other",
-        provider_model="other-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -284,10 +295,8 @@ def test_model_router_filters_candidates_by_provider_constraint() -> None:
 
 
 def test_model_router_raises_when_constraints_reject_all_candidates() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="expensive",
-        provider="openai",
-        provider_model="expensive-model",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -320,10 +329,8 @@ def test_model_router_raises_when_constraints_reject_all_candidates() -> None:
 
 
 def test_model_router_can_use_model_registry() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="fast_general",
-        provider="openai",
-        provider_model="gpt-5-mini",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -350,10 +357,8 @@ def test_model_router_can_use_model_registry() -> None:
 
 
 def test_model_router_still_accepts_models_dictionary() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="fast_general",
-        provider="openai",
-        provider_model="gpt-5-mini",
         workloads=frozenset(
             {
                 LLMWorkload.CLASSIFICATION,
@@ -376,15 +381,8 @@ def test_model_router_still_accepts_models_dictionary() -> None:
 
 
 def test_model_router_filters_by_required_capability() -> None:
-    text_only = ModelDefinition(
+    text_only = create_model(
         name="text_only",
-        provider="openai",
-        provider_model="text-model",
-        workloads=frozenset(
-            {
-                LLMWorkload.GENERAL,
-            }
-        ),
         capabilities=frozenset(
             {
                 ModelCapability.STRUCTURED_OUTPUT,
@@ -392,15 +390,8 @@ def test_model_router_filters_by_required_capability() -> None:
         ),
     )
 
-    tool_capable = ModelDefinition(
+    tool_capable = create_model(
         name="tool_capable",
-        provider="openai",
-        provider_model="tool-model",
-        workloads=frozenset(
-            {
-                LLMWorkload.GENERAL,
-            }
-        ),
         capabilities=frozenset(
             {
                 ModelCapability.STRUCTURED_OUTPUT,
@@ -437,15 +428,8 @@ def test_model_router_filters_by_required_capability() -> None:
 
 
 def test_model_router_requires_all_requested_capabilities() -> None:
-    partial = ModelDefinition(
+    partial = create_model(
         name="partial",
-        provider="openai",
-        provider_model="partial-model",
-        workloads=frozenset(
-            {
-                LLMWorkload.GENERAL,
-            }
-        ),
         capabilities=frozenset(
             {
                 ModelCapability.STRUCTURED_OUTPUT,
@@ -453,15 +437,8 @@ def test_model_router_requires_all_requested_capabilities() -> None:
         ),
     )
 
-    complete = ModelDefinition(
+    complete = create_model(
         name="complete",
-        provider="openai",
-        provider_model="complete-model",
-        workloads=frozenset(
-            {
-                LLMWorkload.GENERAL,
-            }
-        ),
         capabilities=frozenset(
             {
                 ModelCapability.STRUCTURED_OUTPUT,
@@ -499,15 +476,8 @@ def test_model_router_requires_all_requested_capabilities() -> None:
 
 
 def test_model_router_raises_when_capabilities_reject_all_candidates() -> None:
-    model = ModelDefinition(
+    model = create_model(
         name="text_only",
-        provider="openai",
-        provider_model="text-model",
-        workloads=frozenset(
-            {
-                LLMWorkload.GENERAL,
-            }
-        ),
         capabilities=frozenset(
             {
                 ModelCapability.STRUCTURED_OUTPUT,
@@ -538,3 +508,157 @@ def test_model_router_raises_when_capabilities_reject_all_candidates() -> None:
                 }
             ),
         )
+
+
+def test_model_router_ranks_eligible_candidates_by_lower_cost() -> None:
+    expensive = create_model(
+        name="expensive",
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    cheap = create_model(
+        name="cheap",
+        cost_tier=ModelCostTier.LOW,
+    )
+
+    router = ModelRouter(
+        models={
+            "expensive": expensive,
+            "cheap": cheap,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "expensive",
+                    "cheap",
+                ),
+            }
+        ),
+    )
+
+    candidates = router.route_candidates(
+        LLMWorkload.GENERAL,
+        preference=ModelPreference(
+            prefer_lower_cost=True,
+        ),
+    )
+
+    assert candidates == (
+        cheap,
+        expensive,
+    )
+
+
+def test_model_router_ranks_eligible_candidates_by_lower_latency() -> None:
+    slow = create_model(
+        name="slow",
+        latency_tier=ModelLatencyTier.SLOW,
+    )
+
+    fast = create_model(
+        name="fast",
+        latency_tier=ModelLatencyTier.FAST,
+    )
+
+    router = ModelRouter(
+        models={
+            "slow": slow,
+            "fast": fast,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "slow",
+                    "fast",
+                ),
+            }
+        ),
+    )
+
+    candidates = router.route_candidates(
+        LLMWorkload.GENERAL,
+        preference=ModelPreference(
+            prefer_lower_latency=True,
+        ),
+    )
+
+    assert candidates == (
+        fast,
+        slow,
+    )
+
+
+def test_model_router_ranks_by_preferred_provider() -> None:
+    second_provider = create_model(
+        name="second_provider",
+        provider="anthropic",
+    )
+
+    preferred = create_model(
+        name="preferred",
+        provider="openai",
+    )
+
+    router = ModelRouter(
+        models={
+            "second_provider": second_provider,
+            "preferred": preferred,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "second_provider",
+                    "preferred",
+                ),
+            }
+        ),
+    )
+
+    candidates = router.route_candidates(
+        LLMWorkload.GENERAL,
+        preference=ModelPreference(
+            preferred_providers=(
+                "openai",
+                "anthropic",
+            ),
+        ),
+    )
+
+    assert candidates == (
+        preferred,
+        second_provider,
+    )
+
+
+def test_model_router_preserves_policy_order_without_preference() -> None:
+    first = create_model(
+        name="first",
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    second = create_model(
+        name="second",
+        cost_tier=ModelCostTier.LOW,
+    )
+
+    router = ModelRouter(
+        models={
+            "first": first,
+            "second": second,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "first",
+                    "second",
+                ),
+            }
+        ),
+    )
+
+    candidates = router.route_candidates(LLMWorkload.GENERAL)
+
+    assert candidates == (
+        first,
+        second,
+    )

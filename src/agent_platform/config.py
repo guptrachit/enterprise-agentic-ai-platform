@@ -1,6 +1,10 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from agent_platform.llm.model_config import ModelConfig
+from agent_platform.llm.model_policy_config import ModelPolicyConfig
 
 
 class Settings(BaseSettings):
@@ -9,6 +13,8 @@ class Settings(BaseSettings):
 
     llm_provider: str = "openai"
     llm_model: str = "gpt-5-mini"
+    llm_models: tuple[ModelConfig, ...] = ()
+    llm_model_policy: ModelPolicyConfig = Field(default_factory=ModelPolicyConfig)
     openai_api_key: str
 
     llm_timeout_seconds: float = 30.0

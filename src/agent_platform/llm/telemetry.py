@@ -33,6 +33,11 @@ class LLMExecutionEvent:
     allowed_providers: tuple[str, ...] | None = None
     max_cost_tier: str | None = None
     max_latency_tier: str | None = None
+    prefer_lower_cost: bool = False
+    prefer_lower_latency: bool = False
+    preferred_providers: tuple[str, ...] | None = None
+    preferred_cost_tier: str | None = None
+    preferred_latency_tier: str | None = None
 
 
 def create_execution_event(
@@ -59,6 +64,11 @@ def create_execution_event(
     allowed_providers: tuple[str, ...] | None = None,
     max_cost_tier: str | None = None,
     max_latency_tier: str | None = None,
+    prefer_lower_cost: bool = False,
+    prefer_lower_latency: bool = False,
+    preferred_providers: tuple[str, ...] | None = None,
+    preferred_cost_tier: str | None = None,
+    preferred_latency_tier: str | None = None,
 ) -> LLMExecutionEvent:
     """Create a normalized LLM execution telemetry event."""
 
@@ -79,18 +89,23 @@ def create_execution_event(
         prompt_version=prompt_version,
         workload=workload,
         logical_model=logical_model,
+        error_type=error_type,
         fallback_used=fallback_used,
         fallback_from=fallback_from,
         fallback_reason=fallback_reason,
-        error_type=error_type,
         allowed_providers=allowed_providers,
         max_cost_tier=max_cost_tier,
         max_latency_tier=max_latency_tier,
+        prefer_lower_cost=prefer_lower_cost,
+        prefer_lower_latency=prefer_lower_latency,
+        preferred_providers=preferred_providers,
+        preferred_cost_tier=preferred_cost_tier,
+        preferred_latency_tier=preferred_latency_tier,
     )
 
 
 def log_execution_event(event: LLMExecutionEvent) -> None:
-    """Write an LLM execution event as tructured JSON."""
+    """Write an LLM execution event as structured JSON."""
 
     logger.info(
         "llm_execution %s",

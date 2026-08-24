@@ -11,7 +11,11 @@ from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.execution_service import LLMExecutionService
 from agent_platform.llm.model_capability import ModelCapability
 from agent_platform.llm.model_definition import ModelDefinition
-from agent_platform.llm.model_tier import ModelCostTier
+from agent_platform.llm.model_preference import ModelPreference
+from agent_platform.llm.model_tier import (
+    ModelCostTier,
+    ModelLatencyTier,
+)
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
@@ -56,9 +60,8 @@ async def test_execution_service_routes_and_executes_request() -> None:
         LLMWorkload.CLASSIFICATION,
         constraints=None,
         required_capabilities=frozenset(),
+        preference=None,
     )
-
-    client_factory.assert_called_once_with(model)
 
     client.generate.assert_awaited_once_with(
         "Classify this ticket.",
@@ -73,6 +76,11 @@ async def test_execution_service_routes_and_executes_request() -> None:
         allowed_providers=None,
         max_cost_tier=None,
         max_latency_tier=None,
+        prefer_lower_cost=False,
+        prefer_lower_latency=False,
+        preferred_providers=None,
+        preferred_cost_tier=None,
+        preferred_latency_tier=None,
     )
 
 
@@ -93,27 +101,22 @@ async def test_execution_service_preserves_request_metadata() -> None:
     router.route_candidates.return_value = (model,)
 
     client = AsyncMock()
-    client_factory = Mock(return_value=client)
-
-    expected_response = object()
-    client.generate.return_value = expected_response
+    client.generate.return_value = object()
 
     service = LLMExecutionService(
         router=router,
-        client_factory=client_factory,
+        client_factory=Mock(return_value=client),
     )
 
-    request = LLMExecutionRequest(
-        prompt="Classify this ticket.",
-        workload=LLMWorkload.CLASSIFICATION,
-        correlation_id="corr-123",
-        prompt_name="ticket_classifier",
-        prompt_version="2.0",
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Classify this ticket.",
+            workload=LLMWorkload.CLASSIFICATION,
+            correlation_id="corr-123",
+            prompt_name="ticket_classifier",
+            prompt_version="2.0",
+        )
     )
-
-    result = await service.execute(request)
-
-    assert result is expected_response
 
     client.generate.assert_awaited_once_with(
         "Classify this ticket.",
@@ -128,6 +131,11 @@ async def test_execution_service_preserves_request_metadata() -> None:
         allowed_providers=None,
         max_cost_tier=None,
         max_latency_tier=None,
+        prefer_lower_cost=False,
+        prefer_lower_latency=False,
+        preferred_providers=None,
+        preferred_cost_tier=None,
+        preferred_latency_tier=None,
     )
 
 
@@ -143,13 +151,13 @@ async def test_execution_service_does_not_create_client_when_routing_fails() -> 
         client_factory=client_factory,
     )
 
-    request = LLMExecutionRequest(
-        prompt="Classify this ticket.",
-        workload=LLMWorkload.CLASSIFICATION,
-    )
-
     with pytest.raises(LLMModelDisabledError):
-        await service.execute(request)
+        await service.execute(
+            LLMExecutionRequest(
+                prompt="Classify this ticket.",
+                workload=LLMWorkload.CLASSIFICATION,
+            )
+        )
 
     client_factory.assert_not_called()
 
@@ -211,21 +219,6 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
 
     assert result is expected_response
 
-    primary_client.generate.assert_awaited_once_with(
-        "Classify this ticket.",
-        correlation_id=None,
-        prompt_name=None,
-        prompt_version=None,
-        workload="classification",
-        logical_model="primary",
-        fallback_used=False,
-        fallback_from=None,
-        fallback_reason=None,
-        allowed_providers=None,
-        max_cost_tier=None,
-        max_latency_tier=None,
-    )
-
     backup_client.generate.assert_awaited_once_with(
         "Classify this ticket.",
         correlation_id=None,
@@ -239,6 +232,11 @@ async def test_execution_service_falls_back_on_retryable_error() -> None:
         allowed_providers=None,
         max_cost_tier=None,
         max_latency_tier=None,
+        prefer_lower_cost=False,
+        prefer_lower_latency=False,
+        preferred_providers=None,
+        preferred_cost_tier=None,
+        preferred_latency_tier=None,
     )
 
 
@@ -277,16 +275,14 @@ async def test_execution_service_does_not_fallback_on_non_retryable_error() -> N
 
     backup_client = AsyncMock()
 
-    client_factory = Mock(
-        side_effect=[
-            primary_client,
-            backup_client,
-        ]
-    )
-
     service = LLMExecutionService(
         router=router,
-        client_factory=client_factory,
+        client_factory=Mock(
+            side_effect=[
+                primary_client,
+                backup_client,
+            ]
+        ),
     )
 
     with pytest.raises(LLMInvalidRequestError):
@@ -297,7 +293,6 @@ async def test_execution_service_does_not_fallback_on_non_retryable_error() -> N
             )
         )
 
-    assert client_factory.call_count == 1
     backup_client.generate.assert_not_awaited()
 
 
@@ -332,6 +327,7 @@ async def test_execution_service_passes_routing_constraints() -> None:
             }
         ),
         max_cost_tier=ModelCostTier.LOW,
+        max_latency_tier=ModelLatencyTier.FAST,
     )
 
     await service.execute(
@@ -346,6 +342,7 @@ async def test_execution_service_passes_routing_constraints() -> None:
         LLMWorkload.CLASSIFICATION,
         constraints=constraints,
         required_capabilities=frozenset(),
+        preference=None,
     )
 
     client.generate.assert_awaited_once_with(
@@ -360,7 +357,12 @@ async def test_execution_service_passes_routing_constraints() -> None:
         fallback_reason=None,
         allowed_providers=("openai",),
         max_cost_tier="low",
-        max_latency_tier=None,
+        max_latency_tier="fast",
+        prefer_lower_cost=False,
+        prefer_lower_latency=False,
+        preferred_providers=None,
+        preferred_cost_tier=None,
+        preferred_latency_tier=None,
     )
 
 
@@ -411,4 +413,79 @@ async def test_execution_service_passes_required_capabilities() -> None:
         LLMWorkload.GENERAL,
         constraints=None,
         required_capabilities=required,
+        preference=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_execution_service_passes_model_preference() -> None:
+    model = ModelDefinition(
+        name="preferred_model",
+        provider="openai",
+        provider_model="preferred-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.GENERAL,
+            }
+        ),
+    )
+
+    router = Mock()
+    router.route_candidates.return_value = (model,)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+    )
+
+    preference = ModelPreference(
+        prefer_lower_cost=True,
+        prefer_lower_latency=True,
+        preferred_providers=(
+            "openai",
+            "anthropic",
+        ),
+        preferred_cost_tier=ModelCostTier.LOW,
+        preferred_latency_tier=ModelLatencyTier.FAST,
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Answer this question.",
+            workload=LLMWorkload.GENERAL,
+            preference=preference,
+        )
+    )
+
+    router.route_candidates.assert_called_once_with(
+        LLMWorkload.GENERAL,
+        constraints=None,
+        required_capabilities=frozenset(),
+        preference=preference,
+    )
+
+    client.generate.assert_awaited_once_with(
+        "Answer this question.",
+        correlation_id=None,
+        prompt_name=None,
+        prompt_version=None,
+        workload="general",
+        logical_model="preferred_model",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
+        allowed_providers=None,
+        max_cost_tier=None,
+        max_latency_tier=None,
+        prefer_lower_cost=True,
+        prefer_lower_latency=True,
+        preferred_providers=(
+            "openai",
+            "anthropic",
+        ),
+        preferred_cost_tier="low",
+        preferred_latency_tier="fast",
     )

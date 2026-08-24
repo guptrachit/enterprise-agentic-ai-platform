@@ -14,6 +14,7 @@ from agent_platform.llm.errors import (
     LLMStructuredParseError,
     LLMStructuredValidationError,
 )
+from agent_platform.llm.prompt import PromptTemplate
 from agent_platform.llm.retry import RetryPolicy
 from agent_platform.llm.retry_executor import execute_with_retry
 from agent_platform.llm.structured import StructuredLLMResponse
@@ -83,6 +84,11 @@ class OpenAIClient(LLMClient):
         allowed_providers: tuple[str, ...] | None = None,
         max_cost_tier: str | None = None,
         max_latency_tier: str | None = None,
+        prefer_lower_cost: bool = False,
+        prefer_lower_latency: bool = False,
+        preferred_providers: tuple[str, ...] | None = None,
+        preferred_cost_tier: str | None = None,
+        preferred_latency_tier: str | None = None,
     ) -> LLMResponse:
         """Generate an LLM response with retry and normalized metadata."""
 
@@ -139,6 +145,11 @@ class OpenAIClient(LLMClient):
                     allowed_providers=allowed_providers,
                     max_cost_tier=max_cost_tier,
                     max_latency_tier=max_latency_tier,
+                    prefer_lower_cost=prefer_lower_cost,
+                    prefer_lower_latency=prefer_lower_latency,
+                    preferred_providers=preferred_providers,
+                    preferred_cost_tier=preferred_cost_tier,
+                    preferred_latency_tier=preferred_latency_tier,
                 )
             )
 
@@ -180,10 +191,82 @@ class OpenAIClient(LLMClient):
                     fallback_used=fallback_used,
                     fallback_from=fallback_from,
                     fallback_reason=fallback_reason,
+                    allowed_providers=allowed_providers,
+                    max_cost_tier=max_cost_tier,
+                    max_latency_tier=max_latency_tier,
+                    prefer_lower_cost=prefer_lower_cost,
+                    prefer_lower_latency=prefer_lower_latency,
+                    preferred_providers=preferred_providers,
+                    preferred_cost_tier=preferred_cost_tier,
+                    preferred_latency_tier=preferred_latency_tier,
                 )
             )
 
             raise
+
+    async def generate_from_template(
+        self,
+        template: PromptTemplate,
+        variables: dict[str, object],
+        *,
+        correlation_id: str | None = None,
+        workload: str | None = None,
+        logical_model: str | None = None,
+        fallback_used: bool = False,
+        fallback_from: str | None = None,
+        fallback_reason: str | None = None,
+        allowed_providers: tuple[str, ...] | None = None,
+        max_cost_tier: str | None = None,
+        max_latency_tier: str | None = None,
+        prefer_lower_cost: bool = False,
+        prefer_lower_latency: bool = False,
+        preferred_providers: tuple[str, ...] | None = None,
+        preferred_cost_tier: str | None = None,
+        preferred_latency_tier: str | None = None,
+    ) -> LLMResponse:
+        """Render a versioned prompt template and generate a response."""
+
+        prompt = template.render(**variables)
+
+        return await self.generate(
+            prompt,
+            correlation_id=correlation_id,
+            prompt_name=template.name,
+            prompt_version=template.version,
+            workload=workload,
+            logical_model=logical_model,
+            fallback_used=fallback_used,
+            fallback_from=fallback_from,
+            fallback_reason=fallback_reason,
+            allowed_providers=allowed_providers,
+            max_cost_tier=max_cost_tier,
+            max_latency_tier=max_latency_tier,
+            prefer_lower_cost=prefer_lower_cost,
+            prefer_lower_latency=prefer_lower_latency,
+            preferred_providers=preferred_providers,
+            preferred_cost_tier=preferred_cost_tier,
+            preferred_latency_tier=preferred_latency_tier,
+        )
+
+    async def generate_structured_from_template[T: BaseModel](
+        self,
+        template: PromptTemplate,
+        response_model: type[T],
+        variables: dict[str, object],
+        *,
+        correlation_id: str | None = None,
+    ) -> StructuredLLMResponse[T]:
+        """Render a versioned prompt template and generate structured output."""
+
+        prompt = template.render(**variables)
+
+        return await self.generate_structured(
+            prompt,
+            response_model,
+            correlation_id=correlation_id,
+            prompt_name=template.name,
+            prompt_version=template.version,
+        )
 
     async def generate_structured[T: BaseModel](
         self,

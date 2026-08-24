@@ -32,6 +32,11 @@ async def test_routed_execution_uses_model_selected_by_policy(
         allowed_providers: tuple[str, ...] | None = None,
         max_cost_tier: str | None = None,
         max_latency_tier: str | None = None,
+        prefer_lower_cost: bool = False,
+        prefer_lower_latency: bool = False,
+        preferred_providers: tuple[str, ...] | None = None,
+        preferred_cost_tier: str | None = None,
+        preferred_latency_tier: str | None = None,
     ):
         nonlocal selected_model
         nonlocal captured_prompt
@@ -114,6 +119,11 @@ async def test_routed_execution_preserves_execution_metadata(
         allowed_providers: tuple[str, ...] | None = None,
         max_cost_tier: str | None = None,
         max_latency_tier: str | None = None,
+        prefer_lower_cost: bool = False,
+        prefer_lower_latency: bool = False,
+        preferred_providers: tuple[str, ...] | None = None,
+        preferred_cost_tier: str | None = None,
+        preferred_latency_tier: str | None = None,
     ):
         captured["model"] = self.model
         captured["prompt"] = prompt
@@ -128,6 +138,12 @@ async def test_routed_execution_preserves_execution_metadata(
         captured["allowed_providers"] = allowed_providers
         captured["max_cost_tier"] = max_cost_tier
         captured["max_latency_tier"] = max_latency_tier
+        captured["prefer_lower_cost"] = prefer_lower_cost
+        captured["prefer_lower_latency"] = prefer_lower_latency
+        captured["preferred_providers"] = preferred_providers
+        captured["preferred_cost_tier"] = preferred_cost_tier
+        captured["preferred_latency_tier"] = preferred_latency_tier
+
         return object()
 
     monkeypatch.setattr(
@@ -189,4 +205,9 @@ async def test_routed_execution_preserves_execution_metadata(
         "allowed_providers": None,
         "max_cost_tier": None,
         "max_latency_tier": None,
+        "prefer_lower_cost": False,
+        "prefer_lower_latency": False,
+        "preferred_providers": None,
+        "preferred_cost_tier": None,
+        "preferred_latency_tier": None,
     }
