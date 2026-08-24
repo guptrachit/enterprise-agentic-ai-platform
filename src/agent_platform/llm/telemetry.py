@@ -8,7 +8,7 @@ logger = logging.getLogger("agent_platform.llm")
 
 @dataclass(frozen=True)
 class LLMExecutionEvent:
-    """Normalized telemetry event for an LLM execution."""
+    """Normalized telemetry event for an LLM provider execution."""
 
     timestamp: str
     provider: str
@@ -38,6 +38,24 @@ class LLMExecutionEvent:
     preferred_providers: tuple[str, ...] | None = None
     preferred_cost_tier: str | None = None
     preferred_latency_tier: str | None = None
+
+
+@dataclass(frozen=True)
+class RoutingDecisionEvent:
+    """Structured telemetry describing an LLM routing decision."""
+
+    timestamp: str
+    workload: str
+    selected_model: str
+    ranked_candidates: tuple[str, ...]
+    rejected_models: tuple[str, ...]
+    routing_reason_codes: tuple[str, ...]
+    routing_reasons: tuple[str, ...]
+    executed_model: str | None
+    fallback_used: bool
+    success: bool
+    correlation_id: str | None = None
+    error_type: str | None = None
 
 
 def create_execution_event(
@@ -70,7 +88,7 @@ def create_execution_event(
     preferred_cost_tier: str | None = None,
     preferred_latency_tier: str | None = None,
 ) -> LLMExecutionEvent:
-    """Create a normalized LLM execution telemetry event."""
+    """Create normalized provider-execution telemetry."""
 
     return LLMExecutionEvent(
         timestamp=datetime.now(UTC).isoformat(),
@@ -104,10 +122,59 @@ def create_execution_event(
     )
 
 
+def create_routing_decision_event(
+    *,
+    workload: str,
+    selected_model: str,
+    ranked_candidates: tuple[str, ...],
+    rejected_models: tuple[str, ...],
+    routing_reason_codes: tuple[str, ...],
+    routing_reasons: tuple[str, ...],
+    executed_model: str | None,
+    fallback_used: bool,
+    success: bool,
+    correlation_id: str | None = None,
+    error_type: str | None = None,
+) -> RoutingDecisionEvent:
+    """Create structured model-routing telemetry."""
+
+    return RoutingDecisionEvent(
+        timestamp=datetime.now(UTC).isoformat(),
+        workload=workload,
+        selected_model=selected_model,
+        ranked_candidates=ranked_candidates,
+        rejected_models=rejected_models,
+        routing_reason_codes=routing_reason_codes,
+        routing_reasons=routing_reasons,
+        executed_model=executed_model,
+        fallback_used=fallback_used,
+        success=success,
+        correlation_id=correlation_id,
+        error_type=error_type,
+    )
+
+
 def log_execution_event(event: LLMExecutionEvent) -> None:
     """Write an LLM execution event as structured JSON."""
 
     logger.info(
         "llm_execution %s",
-        json.dumps(asdict(event), sort_keys=True),
+        json.dumps(
+            asdict(event),
+            sort_keys=True,
+        ),
+    )
+
+
+def log_routing_decision_event(
+    event: RoutingDecisionEvent,
+) -> None:
+    """Write an LLM routing decision as structured JSON."""
+
+    logger.info(
+        "llm_routing_decision %s",
+        json.dumps(
+            asdict(event),
+            sort_keys=True,
+        ),
     )

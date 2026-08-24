@@ -18,6 +18,7 @@ from agent_platform.llm.model_tier import (
 )
 from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
+from agent_platform.llm.routing_reason import RoutingReasonCode
 
 
 def create_model(
@@ -661,4 +662,234 @@ def test_model_router_preserves_policy_order_without_preference() -> None:
     assert candidates == (
         first,
         second,
+    )
+
+
+def test_route_decision_returns_selected_and_ranked_candidates() -> None:
+    expensive = create_model(
+        name="expensive",
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    cheap = create_model(
+        name="cheap",
+        cost_tier=ModelCostTier.LOW,
+    )
+
+    router = ModelRouter(
+        models={
+            "expensive": expensive,
+            "cheap": cheap,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "expensive",
+                    "cheap",
+                ),
+            }
+        ),
+    )
+
+    decision = router.route_decision(
+        LLMWorkload.GENERAL,
+        preference=ModelPreference(
+            prefer_lower_cost=True,
+        ),
+    )
+
+    assert decision.selected_model is cheap
+
+    assert decision.ranked_candidates == (
+        cheap,
+        expensive,
+    )
+
+    assert decision.rejected_models == ()
+
+    assert any(
+        reason.code is RoutingReasonCode.LOWER_COST_PREFERRED
+        for reason in decision.reasons
+    )
+
+    assert any(reason.code is RoutingReasonCode.SELECTED for reason in decision.reasons)
+
+
+def test_route_decision_records_disabled_rejection() -> None:
+    disabled = create_model(
+        name="disabled",
+        enabled=False,
+    )
+
+    available = create_model(
+        name="available",
+    )
+
+    router = ModelRouter(
+        models={
+            "disabled": disabled,
+            "available": available,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "disabled",
+                    "available",
+                ),
+            }
+        ),
+    )
+
+    decision = router.route_decision(LLMWorkload.GENERAL)
+
+    assert decision.selected_model is available
+
+    assert decision.rejected_models == ("disabled",)
+
+    assert any(reason.code is RoutingReasonCode.DISABLED for reason in decision.reasons)
+
+
+def test_route_decision_records_constraint_rejection() -> None:
+    expensive = create_model(
+        name="expensive",
+        cost_tier=ModelCostTier.HIGH,
+    )
+
+    cheap = create_model(
+        name="cheap",
+        cost_tier=ModelCostTier.LOW,
+    )
+
+    router = ModelRouter(
+        models={
+            "expensive": expensive,
+            "cheap": cheap,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "expensive",
+                    "cheap",
+                ),
+            }
+        ),
+    )
+
+    decision = router.route_decision(
+        LLMWorkload.GENERAL,
+        constraints=RoutingConstraints(
+            max_cost_tier=ModelCostTier.LOW,
+        ),
+    )
+
+    assert decision.selected_model is cheap
+
+    assert decision.rejected_models == ("expensive",)
+
+    assert any(
+        reason.code is RoutingReasonCode.CONSTRAINT_REJECTED
+        for reason in decision.reasons
+    )
+
+
+def test_route_decision_records_missing_capability() -> None:
+    text_only = create_model(
+        name="text_only",
+        capabilities=frozenset(
+            {
+                ModelCapability.STRUCTURED_OUTPUT,
+            }
+        ),
+    )
+
+    tool_model = create_model(
+        name="tool_model",
+        capabilities=frozenset(
+            {
+                ModelCapability.STRUCTURED_OUTPUT,
+                ModelCapability.TOOL_CALLING,
+            }
+        ),
+    )
+
+    router = ModelRouter(
+        models={
+            "text_only": text_only,
+            "tool_model": tool_model,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "text_only",
+                    "tool_model",
+                ),
+            }
+        ),
+    )
+
+    decision = router.route_decision(
+        LLMWorkload.GENERAL,
+        required_capabilities=frozenset(
+            {
+                ModelCapability.TOOL_CALLING,
+            }
+        ),
+    )
+
+    assert decision.selected_model is tool_model
+
+    assert decision.rejected_models == ("text_only",)
+
+    assert any(
+        reason.code is RoutingReasonCode.CAPABILITY_MISSING
+        for reason in decision.reasons
+    )
+
+
+def test_route_decision_records_provider_preference() -> None:
+    anthropic = create_model(
+        name="anthropic_model",
+        provider="anthropic",
+    )
+
+    openai = create_model(
+        name="openai_model",
+        provider="openai",
+    )
+
+    router = ModelRouter(
+        models={
+            "anthropic_model": anthropic,
+            "openai_model": openai,
+        },
+        policy=ModelPolicy(
+            assignments={
+                LLMWorkload.GENERAL: (
+                    "anthropic_model",
+                    "openai_model",
+                ),
+            }
+        ),
+    )
+
+    decision = router.route_decision(
+        LLMWorkload.GENERAL,
+        preference=ModelPreference(
+            preferred_providers=(
+                "openai",
+                "anthropic",
+            ),
+        ),
+    )
+
+    assert decision.selected_model is openai
+
+    assert decision.ranked_candidates == (
+        openai,
+        anthropic,
+    )
+
+    assert any(
+        reason.code is RoutingReasonCode.PROVIDER_PREFERRED
+        for reason in decision.reasons
     )

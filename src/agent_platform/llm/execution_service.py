@@ -1,9 +1,25 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from agent_platform.llm.base import LLMClient, LLMResponse
 from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.model_definition import ModelDefinition
 from agent_platform.llm.model_router import ModelRouter
+from agent_platform.llm.routing_decision import RoutingDecision
+from agent_platform.llm.telemetry import (
+    create_routing_decision_event,
+    log_routing_decision_event,
+)
+
+
+@dataclass(frozen=True)
+class LLMExecutionResult:
+    """LLM response together with its routing decision."""
+
+    response: LLMResponse
+    routing_decision: RoutingDecision
+    executed_model: ModelDefinition
+    fallback_used: bool
 
 
 class LLMExecutionService:
@@ -21,14 +37,26 @@ class LLMExecutionService:
         self,
         request: LLMExecutionRequest,
     ) -> LLMResponse:
-        """Route and execute an LLM request with eligible model fallback."""
+        """Route and execute an LLM request."""
 
-        models = self.router.route_candidates(
+        result = await self.execute_with_decision(request)
+
+        return result.response
+
+    async def execute_with_decision(
+        self,
+        request: LLMExecutionRequest,
+    ) -> LLMExecutionResult:
+        """Execute an LLM request and expose its routing decision."""
+
+        decision = self.router.route_decision(
             request.workload,
             constraints=request.constraints,
             required_capabilities=request.required_capabilities,
             preference=request.preference,
         )
+
+        models = decision.ranked_candidates
 
         constraints = request.constraints
         preference = request.preference
@@ -77,15 +105,25 @@ class LLMExecutionService:
             else None
         )
 
+        routing_reason_codes = tuple(reason.code.value for reason in decision.reasons)
+
+        routing_reasons = tuple(reason.message for reason in decision.reasons)
+
+        ranked_candidates = tuple(
+            candidate.name for candidate in decision.ranked_candidates
+        )
+
         last_error: Exception | None = None
+        last_attempted_model: ModelDefinition | None = None
         fallback_from: str | None = None
         fallback_reason: str | None = None
 
         for index, model in enumerate(models):
+            last_attempted_model = model
             client = self.client_factory(model)
 
             try:
-                return await client.generate(
+                response = await client.generate(
                     request.prompt,
                     correlation_id=request.correlation_id,
                     prompt_name=request.prompt_name,
@@ -104,6 +142,29 @@ class LLMExecutionService:
                     preferred_cost_tier=preferred_cost_tier,
                     preferred_latency_tier=preferred_latency_tier,
                 )
+
+                log_routing_decision_event(
+                    create_routing_decision_event(
+                        workload=request.workload.value,
+                        selected_model=decision.selected_model.name,
+                        ranked_candidates=ranked_candidates,
+                        rejected_models=decision.rejected_models,
+                        routing_reason_codes=routing_reason_codes,
+                        routing_reasons=routing_reasons,
+                        executed_model=model.name,
+                        fallback_used=index > 0,
+                        success=True,
+                        correlation_id=request.correlation_id,
+                    )
+                )
+
+                return LLMExecutionResult(
+                    response=response,
+                    routing_decision=decision,
+                    executed_model=model,
+                    fallback_used=index > 0,
+                )
+
             except Exception as error:
                 last_error = error
 
@@ -112,12 +173,48 @@ class LLMExecutionService:
                     "retryable",
                     False,
                 ):
+                    log_routing_decision_event(
+                        create_routing_decision_event(
+                            workload=request.workload.value,
+                            selected_model=decision.selected_model.name,
+                            ranked_candidates=ranked_candidates,
+                            rejected_models=decision.rejected_models,
+                            routing_reason_codes=routing_reason_codes,
+                            routing_reasons=routing_reasons,
+                            executed_model=model.name,
+                            fallback_used=index > 0,
+                            success=False,
+                            correlation_id=request.correlation_id,
+                            error_type=type(error).__name__,
+                        )
+                    )
+
                     raise
 
                 fallback_from = model.name
                 fallback_reason = type(error).__name__
 
         if last_error is not None:
+            log_routing_decision_event(
+                create_routing_decision_event(
+                    workload=request.workload.value,
+                    selected_model=decision.selected_model.name,
+                    ranked_candidates=ranked_candidates,
+                    rejected_models=decision.rejected_models,
+                    routing_reason_codes=routing_reason_codes,
+                    routing_reasons=routing_reasons,
+                    executed_model=(
+                        last_attempted_model.name
+                        if last_attempted_model is not None
+                        else None
+                    ),
+                    fallback_used=len(models) > 1,
+                    success=False,
+                    correlation_id=request.correlation_id,
+                    error_type=type(last_error).__name__,
+                )
+            )
+
             raise last_error
 
         raise RuntimeError("No routed model candidates were available.")
