@@ -26,6 +26,7 @@ class LLMExecutionService:
         models = self.router.route_candidates(
             request.workload,
             constraints=request.constraints,
+            required_capabilities=request.required_capabilities,
         )
 
         constraints = request.constraints

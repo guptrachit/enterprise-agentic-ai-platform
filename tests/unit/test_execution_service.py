@@ -9,7 +9,10 @@ from agent_platform.llm.errors import (
 )
 from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.execution_service import LLMExecutionService
+from agent_platform.llm.model_capability import ModelCapability
 from agent_platform.llm.model_definition import ModelDefinition
+from agent_platform.llm.model_tier import ModelCostTier
+from agent_platform.llm.routing_constraints import RoutingConstraints
 from agent_platform.llm.workload import LLMWorkload
 
 
@@ -52,6 +55,7 @@ async def test_execution_service_routes_and_executes_request() -> None:
     router.route_candidates.assert_called_once_with(
         LLMWorkload.CLASSIFICATION,
         constraints=None,
+        required_capabilities=frozenset(),
     )
 
     client_factory.assert_called_once_with(model)
@@ -294,30 +298,11 @@ async def test_execution_service_does_not_fallback_on_non_retryable_error() -> N
         )
 
     assert client_factory.call_count == 1
-
-    primary_client.generate.assert_awaited_once_with(
-        "Classify this ticket.",
-        correlation_id=None,
-        prompt_name=None,
-        prompt_version=None,
-        workload="classification",
-        logical_model="primary",
-        fallback_used=False,
-        fallback_from=None,
-        fallback_reason=None,
-        allowed_providers=None,
-        max_cost_tier=None,
-        max_latency_tier=None,
-    )
-
     backup_client.generate.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_execution_service_passes_routing_constraints() -> None:
-    from agent_platform.llm.model_tier import ModelCostTier
-    from agent_platform.llm.routing_constraints import RoutingConstraints
-
     model = ModelDefinition(
         name="fast_general",
         provider="openai",
@@ -360,4 +345,70 @@ async def test_execution_service_passes_routing_constraints() -> None:
     router.route_candidates.assert_called_once_with(
         LLMWorkload.CLASSIFICATION,
         constraints=constraints,
+        required_capabilities=frozenset(),
+    )
+
+    client.generate.assert_awaited_once_with(
+        "Classify this ticket.",
+        correlation_id=None,
+        prompt_name=None,
+        prompt_version=None,
+        workload="classification",
+        logical_model="fast_general",
+        fallback_used=False,
+        fallback_from=None,
+        fallback_reason=None,
+        allowed_providers=("openai",),
+        max_cost_tier="low",
+        max_latency_tier=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_execution_service_passes_required_capabilities() -> None:
+    model = ModelDefinition(
+        name="tool_capable",
+        provider="openai",
+        provider_model="tool-model",
+        workloads=frozenset(
+            {
+                LLMWorkload.GENERAL,
+            }
+        ),
+        capabilities=frozenset(
+            {
+                ModelCapability.TOOL_CALLING,
+            }
+        ),
+    )
+
+    router = Mock()
+    router.route_candidates.return_value = (model,)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+    )
+
+    required = frozenset(
+        {
+            ModelCapability.TOOL_CALLING,
+        }
+    )
+
+    await service.execute(
+        LLMExecutionRequest(
+            prompt="Use a tool.",
+            workload=LLMWorkload.GENERAL,
+            required_capabilities=required,
+        )
+    )
+
+    router.route_candidates.assert_called_once_with(
+        LLMWorkload.GENERAL,
+        constraints=None,
+        required_capabilities=required,
     )
