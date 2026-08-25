@@ -282,3 +282,21 @@ def test_routing_decision_failure_event() -> None:
     assert event.error_type == "LLMInvalidRequestError"
 
     assert event.routing_reason_codes == ("selected",)
+
+
+def test_routing_decision_event_preserves_policy_identifier() -> None:
+    event = create_routing_decision_event(
+        workload="general",
+        selected_model="primary",
+        ranked_candidates=("primary",),
+        rejected_models=(),
+        routing_reason_codes=("selected",),
+        routing_reasons=("Selected model 'primary'",),
+        executed_model="primary",
+        fallback_used=False,
+        success=True,
+        correlation_id="corr-001",
+        policy_identifier=("production-routing-policy@1.2.0"),
+    )
+
+    assert event.policy_identifier == ("production-routing-policy@1.2.0")

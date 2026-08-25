@@ -38,11 +38,13 @@ class LLMExecutionService:
         client_factory: Callable[[ModelDefinition], LLMClient],
         metrics: RoutingMetrics | None = None,
         metrics_exporter: RoutingMetricsExporter | None = None,
+        policy_identifier: str | None = None,
     ) -> None:
         self.router = router
         self.client_factory = client_factory
         self.metrics = metrics
         self.metrics_exporter = metrics_exporter
+        self.policy_identifier = policy_identifier
 
     async def execute(
         self,
@@ -175,6 +177,7 @@ class LLMExecutionService:
                         fallback_used=index > 0,
                         success=True,
                         correlation_id=request.correlation_id,
+                        policy_identifier=self.policy_identifier,
                     )
                 )
 
@@ -215,6 +218,7 @@ class LLMExecutionService:
                             success=False,
                             correlation_id=request.correlation_id,
                             error_type=type(error).__name__,
+                            policy_identifier=self.policy_identifier,
                         )
                     )
 
@@ -252,6 +256,7 @@ class LLMExecutionService:
                     success=False,
                     correlation_id=request.correlation_id,
                     error_type=type(last_error).__name__,
+                    policy_identifier=self.policy_identifier,
                 )
             )
 
@@ -290,7 +295,7 @@ class LLMExecutionService:
 
         try:
             self.metrics_exporter.export(self.metrics.snapshot())
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001
             self.metrics.record_export_failure()
 
             logger.warning(

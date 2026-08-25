@@ -27,6 +27,7 @@ class LLMExecutionEvent:
     workload: str | None = None
     logical_model: str | None = None
     error_type: str | None = None
+    policy_identifier: str | None = None
     fallback_used: bool = False
     fallback_from: str | None = None
     fallback_reason: str | None = None
@@ -56,6 +57,7 @@ class RoutingDecisionEvent:
     success: bool
     correlation_id: str | None = None
     error_type: str | None = None
+    policy_identifier: str | None = None
 
 
 def create_execution_event(
@@ -135,6 +137,7 @@ def create_routing_decision_event(
     success: bool,
     correlation_id: str | None = None,
     error_type: str | None = None,
+    policy_identifier: str | None = None,
 ) -> RoutingDecisionEvent:
     """Create structured model-routing telemetry."""
 
@@ -151,6 +154,7 @@ def create_routing_decision_event(
         success=success,
         correlation_id=correlation_id,
         error_type=error_type,
+        policy_identifier=policy_identifier,
     )
 
 

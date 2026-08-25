@@ -1250,3 +1250,52 @@ async def test_metrics_export_failures_accumulate_across_requests() -> None:
     assert metrics.total_requests == 2
     assert metrics.successful_requests == 2
     assert metrics.metrics_export_failures == 2
+
+
+@pytest.mark.asyncio
+async def test_execution_service_logs_policy_identifier(
+    caplog,
+) -> None:
+    model = create_model(
+        name="primary",
+    )
+
+    router = Mock()
+    router.route_decision.return_value = create_decision(model)
+
+    client = AsyncMock()
+    client.generate.return_value = object()
+
+    service = LLMExecutionService(
+        router=router,
+        client_factory=Mock(return_value=client),
+        policy_identifier=("production-routing-policy@1.1.0"),
+    )
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="agent_platform.llm",
+    ):
+        await service.execute(
+            LLMExecutionRequest(
+                prompt="Answer.",
+                correlation_id="corr-policy-001",
+            )
+        )
+
+    routing_records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("llm_routing_decision ")
+    ]
+
+    assert len(routing_records) == 1
+
+    payload = json.loads(
+        routing_records[0].getMessage().removeprefix("llm_routing_decision ")
+    )
+
+    assert payload["policy_identifier"] == ("production-routing-policy@1.1.0")
+
+    assert payload["selected_model"] == "primary"
+    assert payload["executed_model"] == "primary"
