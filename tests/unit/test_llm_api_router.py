@@ -558,3 +558,575 @@ def test_generate_route_records_failure_metric() -> None:
     assert after.failed_requests == (before.failed_requests + 1)
 
     assert after.status_counts[503] >= 1
+
+
+def test_generate_route_rejects_oversized_prompt(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+
+    service = AsyncMock()
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_max_prompt_chars=5,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "123456",
+        },
+    )
+
+    assert response.status_code == 400
+
+    detail = response.json()["detail"]
+
+    assert detail["code"] == "prompt_too_large"
+
+    service.generate.assert_not_awaited()
+
+
+def test_generate_route_accepts_prompt_at_limit(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_max_prompt_chars=5,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "12345",
+        },
+    )
+
+    assert response.status_code == 200
+
+    service.generate.assert_awaited_once()
+
+
+def test_generate_route_maps_timeout_to_504(
+    monkeypatch,
+) -> None:
+    import asyncio
+
+    from agent_platform.config import Settings
+
+    service = AsyncMock()
+
+    async def slow_generate(_):
+        await asyncio.sleep(0.05)
+
+    service.generate.side_effect = slow_generate
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_request_timeout_seconds=0.001,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Answer.",
+            "correlation_id": "corr-timeout",
+        },
+    )
+
+    assert response.status_code == 504
+
+    detail = response.json()["detail"]
+
+    assert detail["code"] == "llm_request_timeout"
+
+    assert response.headers["X-Correlation-ID"] == "corr-timeout"
+
+
+def test_generate_route_rejects_when_capacity_exhausted() -> None:
+    from agent_platform.llm.api_guardrails import (
+        InFlightRequestGuard,
+    )
+    from agent_platform.llm.api_router import (
+        get_in_flight_request_guard,
+    )
+
+    service = AsyncMock()
+
+    guard = InFlightRequestGuard(max_in_flight=1)
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_in_flight_request_guard] = lambda: guard
+
+    async def run_test() -> None:
+        async with guard.slot():
+            client = TestClient(app)
+
+            response = client.post(
+                "/llm/generate",
+                json={
+                    "prompt": "Answer.",
+                    "correlation_id": ("corr-capacity"),
+                },
+            )
+
+            assert response.status_code == 503
+
+            detail = response.json()["detail"]
+
+            assert detail["code"] == ("llm_capacity_exceeded")
+
+            assert response.headers["X-Correlation-ID"] == "corr-capacity"
+
+    import asyncio
+
+    asyncio.run(run_test())
+
+    service.generate.assert_not_awaited()
+
+
+def test_generate_route_rejects_rate_limit_exceeded() -> None:
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        get_api_rate_limiter,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    client = TestClient(app)
+
+    first = client.post(
+        "/llm/generate",
+        headers={
+            "X-Client-ID": "client-rate-test",
+        },
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    second = client.post(
+        "/llm/generate",
+        headers={
+            "X-Client-ID": "client-rate-test",
+        },
+        json={
+            "prompt": "Second.",
+            "correlation_id": "corr-rate-limit",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+    detail = second.json()["detail"]
+
+    assert detail["code"] == ("llm_rate_limit_exceeded")
+
+    assert second.headers["X-Correlation-ID"] == "corr-rate-limit"
+
+    assert service.generate.await_count == 1
+
+
+def test_rate_limiter_rejection_count_increments() -> None:
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        get_api_rate_limiter,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    client = TestClient(app)
+
+    client.post(
+        "/llm/generate",
+        headers={
+            "X-Client-ID": "client-health-test",
+        },
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    response = client.post(
+        "/llm/generate",
+        headers={
+            "X-Client-ID": "client-health-test",
+        },
+        json={
+            "prompt": "Second.",
+        },
+    )
+
+    assert response.status_code == 429
+
+    snapshot = limiter.snapshot()
+
+    assert snapshot.rejected_requests == 1
+
+
+def test_forwarded_for_does_not_bypass_rate_limit_when_proxy_untrusted(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        get_api_rate_limiter,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_trusted_proxy_hosts=(),
+        ),
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    client = TestClient(app)
+
+    first = client.post(
+        "/llm/generate",
+        headers={
+            "X-Forwarded-For": "198.51.100.1",
+        },
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    second = client.post(
+        "/llm/generate",
+        headers={
+            "X-Forwarded-For": "198.51.100.2",
+        },
+        json={
+            "prompt": "Second.",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+    assert service.generate.await_count == 1
+
+
+def test_failure_telemetry_classifies_rate_limit(
+    caplog,
+) -> None:
+    import json
+    import logging
+
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        get_api_rate_limiter,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    client = TestClient(app)
+
+    client.post(
+        "/llm/generate",
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    caplog.clear()
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="agent_platform.llm",
+    ):
+        response = client.post(
+            "/llm/generate",
+            json={
+                "prompt": "Second.",
+                "correlation_id": "corr-rate-classification",
+            },
+        )
+
+    assert response.status_code == 429
+
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("llm_api_request ")
+    ]
+
+    assert len(records) == 1
+
+    payload = json.loads(records[0].getMessage().removeprefix("llm_api_request "))
+
+    assert payload["failure_code"] == ("llm_rate_limit_exceeded")
+
+
+def test_failure_telemetry_classifies_timeout(
+    monkeypatch,
+    caplog,
+) -> None:
+    import asyncio
+    import json
+    import logging
+
+    from agent_platform.config import Settings
+
+    service = AsyncMock()
+
+    async def slow_generate(_):
+        await asyncio.sleep(0.05)
+
+    service.generate.side_effect = slow_generate
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_request_timeout_seconds=0.001,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="agent_platform.llm",
+    ):
+        response = client.post(
+            "/llm/generate",
+            json={
+                "prompt": "Answer.",
+                "correlation_id": "corr-timeout-classification",
+            },
+        )
+
+    assert response.status_code == 504
+
+    records = [
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("llm_api_request ")
+    ]
+
+    assert len(records) == 1
+
+    payload = json.loads(records[0].getMessage().removeprefix("llm_api_request "))
+
+    assert payload["failure_code"] == ("llm_request_timeout")
+
+
+def test_api_metrics_classify_rate_limit_failure() -> None:
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        api_metrics,
+        get_api_rate_limiter,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    client = TestClient(app)
+
+    before = api_metrics.snapshot()
+
+    client.post(
+        "/llm/generate",
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Second.",
+        },
+    )
+
+    assert response.status_code == 429
+
+    after = api_metrics.snapshot()
+
+    before_count = before.failure_counts.get(
+        "llm_rate_limit_exceeded",
+        0,
+    )
+
+    after_count = after.failure_counts.get(
+        "llm_rate_limit_exceeded",
+        0,
+    )
+
+    assert after_count == before_count + 1
+
+
+def test_api_metrics_classify_timeout_failure(
+    monkeypatch,
+) -> None:
+    import asyncio
+
+    from agent_platform.config import Settings
+    from agent_platform.llm.api_router import (
+        api_metrics,
+    )
+
+    service = AsyncMock()
+
+    async def slow_generate(_):
+        await asyncio.sleep(0.05)
+
+    service.generate.side_effect = slow_generate
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_request_timeout_seconds=0.001,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    before = api_metrics.snapshot()
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Timeout.",
+        },
+    )
+
+    assert response.status_code == 504
+
+    after = api_metrics.snapshot()
+
+    before_count = before.failure_counts.get(
+        "llm_request_timeout",
+        0,
+    )
+
+    after_count = after.failure_counts.get(
+        "llm_request_timeout",
+        0,
+    )
+
+    assert after_count == before_count + 1

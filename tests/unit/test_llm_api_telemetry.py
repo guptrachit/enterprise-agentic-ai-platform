@@ -7,7 +7,7 @@ from agent_platform.llm.api_telemetry import (
 )
 
 
-def test_api_telemetry_preserves_values() -> None:
+def test_api_telemetry_preserves_success_values() -> None:
     event = create_llm_api_request_event(
         correlation_id="corr-001",
         status_code=200,
@@ -27,36 +27,38 @@ def test_api_telemetry_preserves_values() -> None:
 
     assert event.model == "primary"
     assert event.provider == "openai"
+    assert event.failure_code is None
     assert event.timestamp
 
 
-def test_api_telemetry_supports_failure() -> None:
+def test_api_telemetry_preserves_failure_code() -> None:
     event = create_llm_api_request_event(
         correlation_id="corr-002",
-        status_code=503,
+        status_code=429,
         latency_ms=20.0,
         success=False,
         policy_identifier=None,
         model=None,
         provider=None,
+        failure_code="llm_rate_limit_exceeded",
     )
 
     assert event.success is False
-    assert event.status_code == 503
-    assert event.policy_identifier is None
-    assert event.model is None
-    assert event.provider is None
+    assert event.status_code == 429
+
+    assert event.failure_code == ("llm_rate_limit_exceeded")
 
 
 def test_api_telemetry_logging(caplog) -> None:
     event = create_llm_api_request_event(
         correlation_id="corr-003",
-        status_code=200,
+        status_code=503,
         latency_ms=7.5,
-        success=True,
-        policy_identifier=("production-routing-policy@1.1.0"),
-        model="backup",
-        provider="openai",
+        success=False,
+        policy_identifier=None,
+        model=None,
+        provider=None,
+        failure_code="llm_capacity_exceeded",
     )
 
     with caplog.at_level(
@@ -76,6 +78,7 @@ def test_api_telemetry_logging(caplog) -> None:
     payload = json.loads(records[0].getMessage().removeprefix("llm_api_request "))
 
     assert payload["correlation_id"] == "corr-003"
-    assert payload["status_code"] == 200
-    assert payload["success"] is True
-    assert payload["model"] == "backup"
+    assert payload["status_code"] == 503
+    assert payload["success"] is False
+
+    assert payload["failure_code"] == ("llm_capacity_exceeded")

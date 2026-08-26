@@ -45,3 +45,42 @@ def test_maps_unexpected_failure() -> None:
     assert result.code == "llm_internal_error"
 
     assert result.message == ("An unexpected LLM runtime error occurred.")
+
+
+def test_maps_request_timeout() -> None:
+    from agent_platform.llm.api_errors import (
+        LLMRequestTimeoutError,
+    )
+
+    result = map_llm_exception(LLMRequestTimeoutError())
+
+    assert result.status_code == 504
+    assert result.code == "llm_request_timeout"
+
+    assert result.message == ("LLM request exceeded the configured timeout.")
+
+
+def test_maps_capacity_exceeded() -> None:
+    from agent_platform.llm.api_guardrails import (
+        LLMCapacityExceededError,
+    )
+
+    result = map_llm_exception(LLMCapacityExceededError())
+
+    assert result.status_code == 503
+    assert result.code == "llm_capacity_exceeded"
+
+    assert result.message == ("LLM service is currently at request capacity.")
+
+
+def test_maps_rate_limit_exceeded() -> None:
+    from agent_platform.llm.api_rate_limit import (
+        LLMRateLimitExceededError,
+    )
+
+    result = map_llm_exception(LLMRateLimitExceededError())
+
+    assert result.status_code == 429
+    assert result.code == "llm_rate_limit_exceeded"
+
+    assert result.message == ("LLM API request rate limit exceeded.")

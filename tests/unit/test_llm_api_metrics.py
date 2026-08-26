@@ -14,6 +14,7 @@ def test_api_metrics_start_empty() -> None:
     assert snapshot.successful_requests == 0
     assert snapshot.failed_requests == 0
     assert snapshot.status_counts == {}
+    assert snapshot.failure_counts == {}
     assert snapshot.total_latency_ms == 0.0
     assert snapshot.average_latency_ms == 0.0
     assert snapshot.success_rate == 0.0
@@ -35,28 +36,100 @@ def test_api_metrics_record_success() -> None:
     assert snapshot.successful_requests == 1
     assert snapshot.failed_requests == 0
     assert snapshot.status_counts == {200: 1}
+    assert snapshot.failure_counts == {}
     assert snapshot.average_latency_ms == 10.0
     assert snapshot.success_rate == 1.0
 
 
-def test_api_metrics_record_failure() -> None:
+def test_api_metrics_record_failure_code() -> None:
     metrics = LLMAPIMetrics()
 
     metrics.record_request(
-        status_code=503,
+        status_code=429,
         latency_ms=20.0,
         success=False,
+        failure_code="llm_rate_limit_exceeded",
     )
 
     snapshot = metrics.snapshot()
 
     assert snapshot.total_requests == 1
     assert snapshot.failed_requests == 1
-    assert snapshot.status_counts == {503: 1}
-    assert snapshot.failure_rate == 1.0
+
+    assert snapshot.status_counts == {
+        429: 1,
+    }
+
+    assert snapshot.failure_counts == {
+        "llm_rate_limit_exceeded": 1,
+    }
 
 
-def test_api_metrics_aggregate_status_codes() -> None:
+def test_api_metrics_aggregate_failure_codes() -> None:
+    metrics = LLMAPIMetrics()
+
+    metrics.record_request(
+        status_code=429,
+        latency_ms=10.0,
+        success=False,
+        failure_code="llm_rate_limit_exceeded",
+    )
+
+    metrics.record_request(
+        status_code=429,
+        latency_ms=20.0,
+        success=False,
+        failure_code="llm_rate_limit_exceeded",
+    )
+
+    metrics.record_request(
+        status_code=504,
+        latency_ms=30.0,
+        success=False,
+        failure_code="llm_request_timeout",
+    )
+
+    snapshot = metrics.snapshot()
+
+    assert snapshot.failure_counts == {
+        "llm_rate_limit_exceeded": 2,
+        "llm_request_timeout": 1,
+    }
+
+    assert snapshot.failed_requests == 3
+
+
+def test_api_metrics_do_not_record_failure_code_for_success() -> None:
+    metrics = LLMAPIMetrics()
+
+    metrics.record_request(
+        status_code=200,
+        latency_ms=10.0,
+        success=True,
+        failure_code="should-not-count",
+    )
+
+    snapshot = metrics.snapshot()
+
+    assert snapshot.failure_counts == {}
+
+
+def test_api_metrics_support_failure_without_code() -> None:
+    metrics = LLMAPIMetrics()
+
+    metrics.record_request(
+        status_code=500,
+        latency_ms=10.0,
+        success=False,
+    )
+
+    snapshot = metrics.snapshot()
+
+    assert snapshot.failed_requests == 1
+    assert snapshot.failure_counts == {}
+
+
+def test_api_metrics_aggregate_status_codes_and_rates() -> None:
     metrics = LLMAPIMetrics()
 
     metrics.record_request(
@@ -75,6 +148,7 @@ def test_api_metrics_aggregate_status_codes() -> None:
         status_code=503,
         latency_ms=30.0,
         success=False,
+        failure_code="llm_capacity_exceeded",
     )
 
     snapshot = metrics.snapshot()
@@ -82,6 +156,10 @@ def test_api_metrics_aggregate_status_codes() -> None:
     assert snapshot.status_counts == {
         200: 2,
         503: 1,
+    }
+
+    assert snapshot.failure_counts == {
+        "llm_capacity_exceeded": 1,
     }
 
     assert snapshot.total_requests == 3
@@ -105,9 +183,10 @@ def test_api_metrics_snapshot_to_dict() -> None:
     )
 
     metrics.record_request(
-        status_code=500,
+        status_code=504,
         latency_ms=30.0,
         success=False,
+        failure_code="llm_request_timeout",
     )
 
     payload = metrics.snapshot().to_dict()
@@ -118,7 +197,10 @@ def test_api_metrics_snapshot_to_dict() -> None:
         "failed_requests": 1,
         "status_counts": {
             200: 1,
-            500: 1,
+            504: 1,
+        },
+        "failure_counts": {
+            "llm_request_timeout": 1,
         },
         "total_latency_ms": 40.0,
         "average_latency_ms": 20.0,
@@ -133,12 +215,19 @@ def test_api_metrics_snapshot_is_point_in_time() -> None:
     first = metrics.snapshot()
 
     metrics.record_request(
-        status_code=200,
+        status_code=429,
         latency_ms=10.0,
-        success=True,
+        success=False,
+        failure_code="llm_rate_limit_exceeded",
     )
 
     second = metrics.snapshot()
 
     assert first.total_requests == 0
+    assert first.failure_counts == {}
+
     assert second.total_requests == 1
+
+    assert second.failure_counts == {
+        "llm_rate_limit_exceeded": 1,
+    }

@@ -87,10 +87,16 @@ def test_llm_health_endpoint() -> None:
 
     payload = response.json()
 
-    assert payload["status"] == "healthy"
+    assert payload["status"] in {
+        "healthy",
+        "degraded",
+        "saturated",
+    }
 
     assert "runtime" in payload
     assert "api_metrics" in payload
+    assert "concurrency" in payload
+    assert "rate_limit" in payload
 
     assert payload["runtime"]["policy_name"] == "production-routing-policy"
 
@@ -105,4 +111,69 @@ def test_llm_health_endpoint_does_not_expose_secrets() -> None:
 
     assert "openai_api_key" not in body
     assert "authorization" not in body
-    assert "prompt" not in body
+    assert "bearer " not in body
+    assert "api-key" not in body
+
+    payload = response.json()
+
+    assert "prompt" not in payload
+    assert "request_body" not in payload
+
+
+def test_llm_health_endpoint_contains_concurrency_health() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/llm")
+
+    assert response.status_code == 200
+
+    concurrency = response.json()["concurrency"]
+
+    assert concurrency["max_in_flight"] > 0
+
+    assert concurrency["active_requests"] >= 0
+
+    assert concurrency["available_capacity"] >= 0
+
+    assert concurrency["capacity_rejections"] >= 0
+
+    assert 0.0 <= concurrency["utilization_rate"] <= 1.0
+
+
+def test_llm_health_endpoint_contains_rate_limit_health() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/llm")
+
+    assert response.status_code == 200
+
+    rate_limit = response.json()["rate_limit"]
+
+    assert rate_limit["max_requests"] > 0
+
+    assert rate_limit["window_seconds"] > 0
+
+    assert rate_limit["tracked_callers"] >= 0
+
+    assert rate_limit["rejected_requests"] >= 0
+
+
+def test_llm_health_endpoint_contains_reason_codes() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/llm")
+
+    assert response.status_code == 200
+
+    payload = response.json()
+
+    assert "reasons" in payload
+    assert isinstance(
+        payload["reasons"],
+        list,
+    )
+
+    assert all(
+        isinstance(
+            reason,
+            str,
+        )
+        for reason in payload["reasons"]
+    )

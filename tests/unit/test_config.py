@@ -1,4 +1,4 @@
-from agent_platform.config import get_settings
+from agent_platform.config import Settings, get_settings
 from agent_platform.llm.model_capability import ModelCapability
 from agent_platform.llm.workload import LLMWorkload
 
@@ -111,3 +111,119 @@ def test_model_policy_can_be_loaded_from_environment(
         assert assignments[LLMWorkload.REASONING] == "reasoning_model"
     finally:
         get_settings.cache_clear()
+
+
+def test_settings_default_llm_api_prompt_limit() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_max_prompt_chars == 20_000
+
+
+def test_settings_reject_invalid_llm_api_prompt_limit() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="llm_api_max_prompt_chars must be greater than 0",
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_max_prompt_chars=0,
+        )
+
+
+def test_settings_default_llm_api_request_timeout() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_request_timeout_seconds == 60.0
+
+
+def test_settings_reject_invalid_llm_api_request_timeout() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("llm_api_request_timeout_seconds must be greater than 0"),
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_request_timeout_seconds=0.0,
+        )
+
+
+def test_settings_default_llm_api_rate_limit() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_rate_limit_requests == 60
+    assert settings.llm_api_rate_limit_window_seconds == 60.0
+
+
+def test_settings_reject_invalid_llm_api_rate_limit_requests() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="llm_api_rate_limit_requests must be greater than 0",
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_rate_limit_requests=0,
+        )
+
+
+def test_settings_reject_invalid_llm_api_rate_limit_window() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("llm_api_rate_limit_window_seconds must be greater than 0"),
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_rate_limit_window_seconds=0.0,
+        )
+
+
+def test_settings_default_trusted_proxy_hosts() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_trusted_proxy_hosts == ()
+
+
+def test_settings_preserves_trusted_proxy_hosts() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+        llm_api_trusted_proxy_hosts=(
+            "10.0.0.10",
+            "10.0.0.11",
+        ),
+    )
+
+    assert settings.llm_api_trusted_proxy_hosts == (
+        "10.0.0.10",
+        "10.0.0.11",
+    )
+
+
+def test_settings_rejects_empty_trusted_proxy_host() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("llm_api_trusted_proxy_hosts must not contain empty values"),
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_trusted_proxy_hosts=(
+                "10.0.0.10",
+                " ",
+            ),
+        )

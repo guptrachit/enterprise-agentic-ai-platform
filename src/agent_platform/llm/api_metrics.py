@@ -9,6 +9,7 @@ class LLMAPIMetricsSnapshot:
     successful_requests: int
     failed_requests: int
     status_counts: dict[int, int]
+    failure_counts: dict[str, int]
     total_latency_ms: float
 
     @property
@@ -46,6 +47,7 @@ class LLMAPIMetricsSnapshot:
             "successful_requests": self.successful_requests,
             "failed_requests": self.failed_requests,
             "status_counts": dict(self.status_counts),
+            "failure_counts": dict(self.failure_counts),
             "total_latency_ms": self.total_latency_ms,
             "average_latency_ms": self.average_latency_ms,
             "success_rate": self.success_rate,
@@ -61,6 +63,7 @@ class LLMAPIMetrics:
         self._successful_requests = 0
         self._failed_requests = 0
         self._status_counts: dict[int, int] = {}
+        self._failure_counts: dict[str, int] = {}
         self._total_latency_ms = 0.0
 
     def record_request(
@@ -69,6 +72,7 @@ class LLMAPIMetrics:
         status_code: int,
         latency_ms: float,
         success: bool,
+        failure_code: str | None = None,
     ) -> None:
         """Record one governed LLM API request."""
 
@@ -85,8 +89,18 @@ class LLMAPIMetrics:
 
         if success:
             self._successful_requests += 1
-        else:
-            self._failed_requests += 1
+            return
+
+        self._failed_requests += 1
+
+        if failure_code is not None:
+            self._failure_counts[failure_code] = (
+                self._failure_counts.get(
+                    failure_code,
+                    0,
+                )
+                + 1
+            )
 
     def snapshot(self) -> LLMAPIMetricsSnapshot:
         """Return an immutable point-in-time metrics snapshot."""
@@ -96,5 +110,6 @@ class LLMAPIMetrics:
             successful_requests=self._successful_requests,
             failed_requests=self._failed_requests,
             status_counts=dict(self._status_counts),
+            failure_counts=dict(self._failure_counts),
             total_latency_ms=self._total_latency_ms,
         )

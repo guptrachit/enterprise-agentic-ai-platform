@@ -2,11 +2,22 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
+from agent_platform.llm.api_guardrails import (
+    LLMCapacityExceededError,
+    PromptTooLargeError,
+)
+from agent_platform.llm.api_rate_limit import (
+    LLMRateLimitExceededError,
+)
 from agent_platform.llm.errors import (
     LLMInvalidRequestError,
     LLMModelNotFoundError,
     LLMTransientError,
 )
+
+
+class LLMRequestTimeoutError(TimeoutError):
+    """Raised when governed LLM API execution exceeds its timeout."""
 
 
 @dataclass(frozen=True)
@@ -33,6 +44,34 @@ def map_llm_exception(
     error: Exception,
 ) -> LLMAPIError:
     """Map internal governed-runtime exceptions to API-safe errors."""
+
+    if isinstance(error, PromptTooLargeError):
+        return LLMAPIError(
+            status_code=400,
+            code="prompt_too_large",
+            message=str(error),
+        )
+
+    if isinstance(error, LLMRateLimitExceededError):
+        return LLMAPIError(
+            status_code=429,
+            code="llm_rate_limit_exceeded",
+            message="LLM API request rate limit exceeded.",
+        )
+
+    if isinstance(error, LLMCapacityExceededError):
+        return LLMAPIError(
+            status_code=503,
+            code="llm_capacity_exceeded",
+            message="LLM service is currently at request capacity.",
+        )
+
+    if isinstance(error, LLMRequestTimeoutError):
+        return LLMAPIError(
+            status_code=504,
+            code="llm_request_timeout",
+            message="LLM request exceeded the configured timeout.",
+        )
 
     if isinstance(error, LLMInvalidRequestError):
         return LLMAPIError(

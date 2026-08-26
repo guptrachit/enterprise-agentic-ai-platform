@@ -18,6 +18,7 @@ class LLMAPIRequestEvent:
     policy_identifier: str | None
     model: str | None
     provider: str | None
+    failure_code: str | None
 
 
 def create_llm_api_request_event(
@@ -29,6 +30,7 @@ def create_llm_api_request_event(
     policy_identifier: str | None,
     model: str | None,
     provider: str | None,
+    failure_code: str | None = None,
 ) -> LLMAPIRequestEvent:
     """Create structured API telemetry."""
 
@@ -41,6 +43,7 @@ def create_llm_api_request_event(
         policy_identifier=policy_identifier,
         model=model,
         provider=provider,
+        failure_code=failure_code,
     )
 
 
