@@ -1,9 +1,13 @@
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_platform.llm.api_models import LLMGenerateResponse
 from agent_platform.main import app
+from agent_platform.production_readiness import (
+    ProductionReadinessError,
+)
 
 
 def test_root_endpoint() -> None:
@@ -268,3 +272,183 @@ def test_llm_health_endpoint_contains_export_health() -> None:
     assert 0.0 <= export["success_rate"] <= 1.0
 
     assert 0.0 <= export["failure_rate"] <= 1.0
+
+
+def test_application_startup_runs_production_readiness_validation(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+
+    monkeypatch.setattr(
+        "agent_platform.main.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            app_env="production",
+            llm_api_authentication_required=False,
+            llm_api_cors_allowed_origins=("https://app.example.com",),
+        ),
+    )
+
+    try:
+        with TestClient(app):
+            pass
+    except ProductionReadinessError:
+        pass
+    else:
+        raise AssertionError("Expected startup production readiness failure")
+
+
+def test_application_startup_fails_when_runtime_is_unresolved(
+    monkeypatch,
+) -> None:
+    from unittest.mock import Mock
+
+    runtime = Mock()
+
+    refresh_service = Mock()
+
+    health_snapshot = Mock()
+
+    health_snapshot.to_dict.return_value = {
+        "resolved": False,
+    }
+
+    refresh_service.health_snapshot.return_value = health_snapshot
+
+    runtime.refresh_service = refresh_service
+
+    monkeypatch.setattr(
+        "agent_platform.main.create_fully_configured_governed_runtime",
+        lambda **_: runtime,
+    )
+
+    with (
+        pytest.raises(
+            ProductionReadinessError,
+            match="Governed LLM runtime is not ready",
+        ),
+        TestClient(app),
+    ):
+        pass
+
+
+def test_application_shutdown_closes_runtime_resources(
+    monkeypatch,
+) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    runtime = Mock()
+    runtime.close = AsyncMock()
+
+    refresh_service = Mock()
+    refresh_service.close = AsyncMock()
+
+    health_snapshot = Mock()
+
+    health_snapshot.to_dict.return_value = {
+        "resolved": True,
+        "policy_name": "production-routing-policy",
+        "policy_identifier": ("production-routing-policy@1.0.0"),
+    }
+
+    refresh_service.health_snapshot.return_value = health_snapshot
+
+    runtime.refresh_service = refresh_service
+
+    monkeypatch.setattr(
+        "agent_platform.main.create_fully_configured_governed_runtime",
+        lambda **_: runtime,
+    )
+
+    with TestClient(app):
+        pass
+
+    refresh_service.close.assert_awaited_once_with()
+    runtime.close.assert_awaited_once_with()
+
+
+def test_application_logs_startup_and_shutdown_events(
+    caplog,
+) -> None:
+    import logging
+
+    with (
+        caplog.at_level(
+            logging.INFO,
+            logger="agent_platform.lifecycle",
+        ),
+        TestClient(app),
+    ):
+        pass
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("lifecycle_event ")
+    ]
+
+    assert any("application_startup_succeeded" in message for message in messages)
+
+    assert any("application_shutdown_started" in message for message in messages)
+
+    assert any("application_shutdown_completed" in message for message in messages)
+
+
+def test_liveness_endpoint() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/live")
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "status": "alive",
+    }
+
+
+def test_readiness_endpoint_returns_ready() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/ready")
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "status": "ready",
+        "reasons": [],
+    }
+
+
+def test_readiness_endpoint_returns_503_when_runtime_unresolved(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    with TestClient(app) as client:
+        runtime = Mock()
+
+        snapshot = Mock()
+
+        snapshot.to_dict.return_value = {
+            "resolved": False,
+        }
+
+        runtime.health_snapshot.return_value = snapshot
+
+        monkeypatch.setattr(
+            app.state,
+            "governed_llm_runtime",
+            SimpleNamespace(
+                refresh_service=runtime,
+            ),
+        )
+
+        response = client.get("/health/ready")
+
+    assert response.status_code == 503
+
+    assert response.json() == {
+        "status": "not_ready",
+        "reasons": [
+            "routing_policy_unresolved",
+        ],
+    }

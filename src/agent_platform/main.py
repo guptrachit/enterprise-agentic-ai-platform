@@ -3,8 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from agent_platform.config import get_settings
+from agent_platform.lifecycle_telemetry import (
+    LifecycleEventType,
+    create_lifecycle_event,
+    log_lifecycle_event,
+)
 from agent_platform.llm.api_health import (
     create_llm_api_health_payload,
 )
@@ -25,6 +31,17 @@ from agent_platform.llm.fully_configured_governed_runtime import (
 from agent_platform.observability.operational_service import (
     OperationalObservabilityService,
 )
+from agent_platform.production_readiness import (
+    validate_production_readiness,
+    validate_runtime_readiness,
+)
+from agent_platform.readiness import (
+    ReadinessStatus,
+    assess_runtime_readiness,
+)
+from agent_platform.runtime_lifecycle import (
+    close_runtime_resource,
+)
 from agent_platform.security.content_type_middleware import (
     JSONContentTypeMiddleware,
 )
@@ -44,25 +61,69 @@ from agent_platform.security.security_headers import (
 async def lifespan(
     app: FastAPI,
 ) -> AsyncIterator[None]:
-    """Create application-scoped governed LLM runtime."""
+    """Create, validate, observe, and clean up application runtime."""
 
     settings = get_settings()
 
-    runtime = create_fully_configured_governed_runtime(
-        settings=settings,
-        client_factory=lambda model: create_llm_client_for_model(
-            settings,
-            model,
-        ),
-    )
+    runtime = None
 
-    app.state.governed_llm_runtime = runtime
+    try:
+        validate_production_readiness(settings)
 
-    app.state.governed_llm_api_service = GovernedLLMAPIService(
-        runtime=runtime.refresh_service
-    )
+        runtime = create_fully_configured_governed_runtime(
+            settings=settings,
+            client_factory=lambda model: create_llm_client_for_model(
+                settings,
+                model,
+            ),
+        )
 
-    yield
+        validate_runtime_readiness(runtime.refresh_service)
+
+        app.state.governed_llm_runtime = runtime
+
+        app.state.governed_llm_api_service = GovernedLLMAPIService(
+            runtime=runtime.refresh_service
+        )
+
+        log_lifecycle_event(
+            create_lifecycle_event(
+                event_type=LifecycleEventType.STARTUP_SUCCEEDED,
+                app_env=settings.app_env,
+            )
+        )
+
+        yield
+
+    except Exception:
+        log_lifecycle_event(
+            create_lifecycle_event(
+                event_type=LifecycleEventType.STARTUP_FAILED,
+                app_env=settings.app_env,
+            )
+        )
+
+        raise
+
+    finally:
+        if runtime is not None:
+            log_lifecycle_event(
+                create_lifecycle_event(
+                    event_type=LifecycleEventType.SHUTDOWN_STARTED,
+                    app_env=settings.app_env,
+                )
+            )
+
+            await close_runtime_resource(runtime.refresh_service)
+
+            await close_runtime_resource(runtime)
+
+            log_lifecycle_event(
+                create_lifecycle_event(
+                    event_type=LifecycleEventType.SHUTDOWN_COMPLETED,
+                    app_env=settings.app_env,
+                )
+            )
 
 
 settings = get_settings()
@@ -126,6 +187,31 @@ def health_check() -> dict[str, str]:
     return {
         "status": "healthy",
     }
+
+
+@app.get("/health/live")
+def liveness_check() -> dict[str, str]:
+    """Return process liveness."""
+
+    return {
+        "status": "alive",
+    }
+
+
+@app.get("/health/ready")
+def readiness_check() -> JSONResponse:
+    """Return governed runtime readiness."""
+
+    runtime = app.state.governed_llm_runtime
+
+    assessment = assess_runtime_readiness(runtime.refresh_service)
+
+    status_code = 200 if assessment.status is ReadinessStatus.READY else 503
+
+    return JSONResponse(
+        status_code=status_code,
+        content=assessment.to_dict(),
+    )
 
 
 @app.get("/health/llm")
