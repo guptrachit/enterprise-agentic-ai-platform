@@ -84,3 +84,31 @@ def test_maps_rate_limit_exceeded() -> None:
     assert result.code == "llm_rate_limit_exceeded"
 
     assert result.message == ("LLM API request rate limit exceeded.")
+
+
+def test_maps_authentication_required() -> None:
+    from agent_platform.security.auth_policy import (
+        AuthenticationRequiredError,
+    )
+
+    result = map_llm_exception(AuthenticationRequiredError())
+
+    assert result.status_code == 401
+    assert result.code == "authentication_required"
+
+    assert result.message == ("Authentication is required.")
+
+
+def test_maps_authorization_denied() -> None:
+    from agent_platform.security.authorization import (
+        AuthorizationDeniedError,
+    )
+
+    result = map_llm_exception(AuthorizationDeniedError())
+
+    assert result.status_code == 403
+    assert result.code == "authorization_denied"
+
+    assert result.message == (
+        "The authenticated identity is not authorized to perform this operation."
+    )

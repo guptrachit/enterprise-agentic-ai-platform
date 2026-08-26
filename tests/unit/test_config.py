@@ -227,3 +227,20 @@ def test_settings_rejects_empty_trusted_proxy_host() -> None:
                 " ",
             ),
         )
+
+
+def test_settings_default_llm_api_authentication_required() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_authentication_required is False
+
+
+def test_settings_can_require_llm_api_authentication() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+        llm_api_authentication_required=True,
+    )
+
+    assert settings.llm_api_authentication_required is True

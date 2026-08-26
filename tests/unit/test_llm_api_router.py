@@ -14,12 +14,17 @@ from agent_platform.llm.errors import (
     LLMInvalidRequestError,
     LLMTransientError,
 )
+from agent_platform.security.exception_handlers import (
+    register_security_exception_handlers,
+)
 
 
 def create_app(
     service,
 ) -> FastAPI:
     app = FastAPI()
+
+    register_security_exception_handlers(app)
 
     app.include_router(router)
 
@@ -1130,3 +1135,257 @@ def test_api_metrics_classify_timeout_failure(
     )
 
     assert after_count == before_count + 1
+
+
+def test_authenticated_identity_is_used_for_rate_limit() -> None:
+    from agent_platform.llm.api_rate_limit import (
+        LLMAPIRateLimiter,
+    )
+    from agent_platform.llm.api_router import (
+        get_api_rate_limiter,
+    )
+    from agent_platform.security.auth_dependency import (
+        get_authenticated_identity,
+    )
+    from agent_platform.security.auth_identity import (
+        AuthenticatedIdentity,
+        IdentityType,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    limiter = LLMAPIRateLimiter(
+        max_requests=1,
+        window_seconds=60.0,
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_api_rate_limiter] = lambda: limiter
+
+    app.dependency_overrides[get_authenticated_identity] = lambda: (
+        AuthenticatedIdentity(
+            subject="user-rate-limit-001",
+            identity_type=IdentityType.USER,
+            scopes=frozenset(
+                {
+                    "llm:generate",
+                }
+            ),
+        )
+    )
+
+    client = TestClient(app)
+
+    first = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "First.",
+        },
+    )
+
+    second = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Second.",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+    assert service.generate.await_count == 1
+
+    snapshot = limiter.snapshot()
+
+    assert snapshot.tracked_callers == 1
+
+
+def test_generate_route_rejects_anonymous_when_auth_required(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+
+    service = AsyncMock()
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_authentication_required=True,
+        ),
+    )
+
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Answer.",
+            "correlation_id": "corr-auth-required",
+        },
+    )
+
+    assert response.status_code == 401
+
+    detail = response.json()["detail"]
+
+    assert detail["code"] == ("authentication_required")
+
+    assert response.headers["X-Correlation-ID"] == "corr-auth-required"
+
+    service.generate.assert_not_awaited()
+
+
+def test_generate_route_allows_authenticated_when_auth_required(
+    monkeypatch,
+) -> None:
+    from agent_platform.config import Settings
+    from agent_platform.security.auth_dependency import (
+        get_authenticated_identity,
+    )
+    from agent_platform.security.auth_identity import (
+        AuthenticatedIdentity,
+        IdentityType,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    monkeypatch.setattr(
+        "agent_platform.llm.api_router.get_settings",
+        lambda: Settings(
+            openai_api_key="test-key",
+            llm_api_authentication_required=True,
+        ),
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_authenticated_identity] = lambda: (
+        AuthenticatedIdentity(
+            subject="user-123",
+            identity_type=IdentityType.USER,
+            scopes=frozenset(
+                {
+                    "llm:generate",
+                }
+            ),
+        )
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Answer.",
+        },
+    )
+
+    assert response.status_code == 200
+
+    service.generate.assert_awaited_once()
+
+
+def test_generate_route_rejects_authenticated_identity_without_scope() -> None:
+    from agent_platform.security.auth_dependency import (
+        get_authenticated_identity,
+    )
+    from agent_platform.security.auth_identity import (
+        AuthenticatedIdentity,
+        IdentityType,
+    )
+
+    service = AsyncMock()
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_authenticated_identity] = lambda: (
+        AuthenticatedIdentity(
+            subject="user-no-scope",
+            identity_type=IdentityType.USER,
+            scopes=frozenset(),
+        )
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/llm/generate",
+        headers={
+            "X-Correlation-ID": "corr-no-scope",
+        },
+        json={
+            "prompt": "Answer.",
+        },
+    )
+
+    assert response.status_code == 403
+
+    detail = response.json()["detail"]
+
+    assert detail["code"] == ("authorization_denied")
+
+    assert response.headers["X-Correlation-ID"] == "corr-no-scope"
+
+    service.generate.assert_not_awaited()
+
+
+def test_generate_route_allows_identity_with_generate_scope() -> None:
+    from agent_platform.security.auth_dependency import (
+        get_authenticated_identity,
+    )
+    from agent_platform.security.auth_identity import (
+        AuthenticatedIdentity,
+        IdentityType,
+    )
+
+    service = AsyncMock()
+
+    service.generate.return_value = LLMGenerateResponse(
+        content="Answer",
+        policy_identifier=("production-routing-policy@1.0.0"),
+        model="primary",
+        provider="openai",
+    )
+
+    app = create_app(service)
+
+    app.dependency_overrides[get_authenticated_identity] = lambda: (
+        AuthenticatedIdentity(
+            subject="user-authorized",
+            identity_type=IdentityType.USER,
+            scopes=frozenset(
+                {
+                    "llm:generate",
+                }
+            ),
+        )
+    )
+
+    client = TestClient(app)
+
+    response = client.post(
+        "/llm/generate",
+        json={
+            "prompt": "Answer.",
+        },
+    )
+
+    assert response.status_code == 200
+
+    service.generate.assert_awaited_once()

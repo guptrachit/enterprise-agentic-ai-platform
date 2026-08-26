@@ -38,6 +38,15 @@ from agent_platform.llm.api_telemetry import (
     create_llm_api_request_event,
     log_llm_api_request_event,
 )
+from agent_platform.security.auth_identity import (
+    AuthenticatedIdentity,
+)
+from agent_platform.security.auth_policy import (
+    AuthenticationPolicy,
+)
+from agent_platform.security.authorization_dependency import (
+    LLMGenerateIdentityDependency,
+)
 
 router = APIRouter(
     prefix="/llm",
@@ -94,6 +103,24 @@ def get_governed_llm_api_service() -> GovernedLLMAPIService:
     raise RuntimeError("Governed LLM API service dependency is not configured.")
 
 
+def resolve_rate_limit_identity(
+    *,
+    request: Request,
+    identity: AuthenticatedIdentity,
+) -> str:
+    """Resolve the trusted identity used for rate limiting."""
+
+    if identity.authenticated:
+        return identity.subject
+
+    settings = get_settings()
+
+    return resolve_client_identity(
+        request,
+        trusted_proxy_hosts=(settings.llm_api_trusted_proxy_hosts),
+    )
+
+
 GovernedLLMAPIServiceDependency = Annotated[
     GovernedLLMAPIService,
     Depends(get_governed_llm_api_service),
@@ -121,6 +148,7 @@ async def generate(
     service: GovernedLLMAPIServiceDependency,
     concurrency_guard: InFlightRequestGuardDependency,
     rate_limiter: LLMAPIRateLimiterDependency,
+    identity: LLMGenerateIdentityDependency,
 ) -> LLMGenerateResponse:
     """Execute one governed LLM generation request."""
 
@@ -143,14 +171,18 @@ async def generate(
     try:
         settings = get_settings()
 
+        AuthenticationPolicy(
+            authentication_required=(settings.llm_api_authentication_required)
+        ).enforce(identity)
+
         validate_prompt_length(
             request_body.prompt,
             max_chars=settings.llm_api_max_prompt_chars,
         )
 
-        caller_id = resolve_client_identity(
-            request,
-            trusted_proxy_hosts=(settings.llm_api_trusted_proxy_hosts),
+        caller_id = resolve_rate_limit_identity(
+            request=request,
+            identity=identity,
         )
 
         await rate_limiter.check(caller_id)

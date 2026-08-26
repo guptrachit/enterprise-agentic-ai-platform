@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     llm_api_trusted_proxy_hosts: tuple[str, ...] = ()
 
+    llm_api_authentication_required: bool = False
+
     @model_validator(mode="after")
     def validate_runtime_policy_refresh(
         self,

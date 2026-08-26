@@ -13,6 +13,9 @@ from agent_platform.llm.api_rate_limit import (
 from agent_platform.llm.refresh_aware_execution_service import (
     RefreshAwareLLMExecutionService,
 )
+from agent_platform.security.security_metrics import (
+    SecurityMetrics,
+)
 
 
 def create_llm_api_health_payload(
@@ -21,6 +24,7 @@ def create_llm_api_health_payload(
     api_metrics: LLMAPIMetrics,
     concurrency_guard: InFlightRequestGuard,
     rate_limiter: LLMAPIRateLimiter,
+    security_metrics: SecurityMetrics,
 ) -> dict[str, object]:
     """Create safe operational health for the governed LLM API."""
 
@@ -31,6 +35,8 @@ def create_llm_api_health_payload(
     concurrency_snapshot = concurrency_guard.snapshot().to_dict()
 
     rate_limit_snapshot = rate_limiter.snapshot().to_dict()
+
+    security_snapshot = security_metrics.snapshot().to_dict()
 
     assessment = assess_llm_api_health(
         runtime_resolved=bool(
@@ -51,4 +57,5 @@ def create_llm_api_health_payload(
         "api_metrics": api_metrics_snapshot,
         "concurrency": concurrency_snapshot,
         "rate_limit": rate_limit_snapshot,
+        "security": security_snapshot,
     }

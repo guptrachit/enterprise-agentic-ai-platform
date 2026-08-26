@@ -9,7 +9,9 @@ from agent_platform.llm.api_health import (
 )
 from agent_platform.llm.api_router import (
     api_metrics,
+    get_api_rate_limiter,
     get_governed_llm_api_service,
+    get_in_flight_request_guard,
 )
 from agent_platform.llm.api_router import (
     router as llm_router,
@@ -18,6 +20,10 @@ from agent_platform.llm.api_service import GovernedLLMAPIService
 from agent_platform.llm.factory import create_llm_client_for_model
 from agent_platform.llm.fully_configured_governed_runtime import (
     create_fully_configured_governed_runtime,
+)
+from agent_platform.security.exception_handlers import (
+    register_security_exception_handlers,
+    security_metrics,
 )
 
 
@@ -51,6 +57,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+register_security_exception_handlers(app)
+
 
 def get_application_llm_api_service() -> GovernedLLMAPIService:
     """Return the application-scoped governed LLM API service."""
@@ -74,7 +82,9 @@ def root() -> dict[str, str]:
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+    }
 
 
 @app.get("/health/llm")
@@ -82,8 +92,13 @@ def llm_health_check() -> dict[str, object]:
     """Return safe governed LLM runtime operational health."""
 
     runtime = app.state.governed_llm_runtime
+    concurrency_guard = get_in_flight_request_guard()
+    rate_limiter = get_api_rate_limiter()
 
     return create_llm_api_health_payload(
         runtime=runtime.refresh_service,
         api_metrics=api_metrics,
+        concurrency_guard=concurrency_guard,
+        rate_limiter=rate_limiter,
+        security_metrics=security_metrics,
     )

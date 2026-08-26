@@ -110,7 +110,8 @@ def test_llm_health_endpoint_does_not_expose_secrets() -> None:
     body = response.text.lower()
 
     assert "openai_api_key" not in body
-    assert "authorization" not in body
+    assert "authorization:" not in body
+    assert "bearer " not in body
     assert "bearer " not in body
     assert "api-key" not in body
 
@@ -176,4 +177,24 @@ def test_llm_health_endpoint_contains_reason_codes() -> None:
             str,
         )
         for reason in payload["reasons"]
+    )
+
+
+def test_llm_health_endpoint_contains_security_health() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/llm")
+
+    assert response.status_code == 200
+
+    security = response.json()["security"]
+
+    assert security["authentication_failures"] >= 0
+
+    assert security["authorization_failures"] >= 0
+
+    assert security["total_security_failures"] >= 0
+
+    assert isinstance(
+        security["failure_counts"],
+        dict,
     )

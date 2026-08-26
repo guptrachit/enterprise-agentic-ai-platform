@@ -14,6 +14,13 @@ from agent_platform.llm.errors import (
     LLMModelNotFoundError,
     LLMTransientError,
 )
+from agent_platform.security.auth_policy import (
+    AuthenticationRequiredError,
+)
+
+from agent_platform.security.authorization import (
+    AuthorizationDeniedError,
+)
 
 
 class LLMRequestTimeoutError(TimeoutError):
@@ -44,6 +51,21 @@ def map_llm_exception(
     error: Exception,
 ) -> LLMAPIError:
     """Map internal governed-runtime exceptions to API-safe errors."""
+
+    if isinstance(error, AuthenticationRequiredError):
+        return LLMAPIError(
+            status_code=401,
+            code="authentication_required",
+            message="Authentication is required.",
+        )
+
+    if isinstance(error, AuthorizationDeniedError):
+        return LLMAPIError(
+            status_code=403,
+            code="authorization_denied",
+            message="The authenticated identity is not authorized "
+            "to perform this operation.",
+        )
 
     if isinstance(error, PromptTooLargeError):
         return LLMAPIError(
