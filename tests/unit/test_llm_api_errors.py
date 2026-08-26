@@ -1,0 +1,47 @@
+from agent_platform.llm.api_errors import (
+    map_llm_exception,
+)
+from agent_platform.llm.errors import (
+    LLMInvalidRequestError,
+    LLMModelNotFoundError,
+    LLMTransientError,
+)
+
+
+def test_maps_invalid_request() -> None:
+    result = map_llm_exception(LLMInvalidRequestError())
+
+    assert result.status_code == 400
+    assert result.code == "invalid_llm_request"
+
+
+def test_maps_model_not_found() -> None:
+    result = map_llm_exception(LLMModelNotFoundError("missing-model"))
+
+    assert result.status_code == 503
+    assert result.code == "llm_model_unavailable"
+
+
+def test_maps_transient_failure() -> None:
+    result = map_llm_exception(LLMTransientError())
+
+    assert result.status_code == 503
+
+    assert result.code == ("llm_temporarily_unavailable")
+
+
+def test_maps_missing_active_policy() -> None:
+    result = map_llm_exception(LookupError("No active routing policy found."))
+
+    assert result.status_code == 503
+
+    assert result.code == ("routing_policy_unavailable")
+
+
+def test_maps_unexpected_failure() -> None:
+    result = map_llm_exception(RuntimeError("internal detail"))
+
+    assert result.status_code == 500
+    assert result.code == "llm_internal_error"
+
+    assert result.message == ("An unexpected LLM runtime error occurred.")
