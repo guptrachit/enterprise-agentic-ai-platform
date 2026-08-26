@@ -136,3 +136,43 @@ def test_classifier_remains_backward_compatible() -> None:
     )
 
     assert status is LLMAPIHealthStatus.DEGRADED
+
+
+def test_health_assessment_is_degraded_after_export_failure() -> None:
+    assessment = assess_llm_api_health(
+        runtime_resolved=True,
+        utilization_rate=0.25,
+        capacity_rejections=0,
+        failure_counts={},
+        export_failed_count=1,
+    )
+
+    assert assessment.status is LLMAPIHealthStatus.DEGRADED
+
+    assert assessment.reasons == ("telemetry_export_degraded",)
+
+
+def test_export_failure_does_not_override_saturated_status() -> None:
+    assessment = assess_llm_api_health(
+        runtime_resolved=True,
+        utilization_rate=1.0,
+        capacity_rejections=0,
+        failure_counts={},
+        export_failed_count=2,
+    )
+
+    assert assessment.status is LLMAPIHealthStatus.SATURATED
+
+    assert assessment.reasons == ("llm_capacity_saturated",)
+
+
+def test_classifier_accepts_export_failure_count() -> None:
+    status = classify_llm_api_health(
+        runtime_resolved=True,
+        utilization_rate=0.25,
+        capacity_rejections=0,
+        failure_counts={},
+        export_failed_count=1,
+    )
+
+    assert status is LLMAPIHealthStatus.DEGRADED

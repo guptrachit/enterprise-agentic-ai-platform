@@ -22,6 +22,9 @@ from agent_platform.llm.factory import create_llm_client_for_model
 from agent_platform.llm.fully_configured_governed_runtime import (
     create_fully_configured_governed_runtime,
 )
+from agent_platform.observability.operational_service import (
+    OperationalObservabilityService,
+)
 from agent_platform.security.content_type_middleware import (
     JSONContentTypeMiddleware,
 )
@@ -95,8 +98,6 @@ app.add_middleware(
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-app.add_middleware(SecurityHeadersMiddleware)
-
 register_security_exception_handlers(app)
 
 
@@ -129,16 +130,18 @@ def health_check() -> dict[str, str]:
 
 @app.get("/health/llm")
 def llm_health_check() -> dict[str, object]:
-    """Return safe governed LLM runtime operational health."""
+    """Return unified governed LLM operational health."""
 
     runtime = app.state.governed_llm_runtime
-    concurrency_guard = get_in_flight_request_guard()
-    rate_limiter = get_api_rate_limiter()
 
-    return create_llm_api_health_payload(
+    observability_service = OperationalObservabilityService(
         runtime=runtime.refresh_service,
         api_metrics=api_metrics,
-        concurrency_guard=concurrency_guard,
-        rate_limiter=rate_limiter,
+        concurrency_guard=get_in_flight_request_guard(),
+        rate_limiter=get_api_rate_limiter(),
         security_metrics=security_metrics,
+    )
+
+    return create_llm_api_health_payload(
+        observability_service=observability_service,
     )

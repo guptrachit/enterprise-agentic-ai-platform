@@ -24,6 +24,7 @@ def assess_llm_api_health(
     utilization_rate: float,
     capacity_rejections: int,
     failure_counts: dict[str, int],
+    export_failed_count: int = 0,
 ) -> LLMAPIHealthAssessment:
     """Assess governed LLM API health and reason codes."""
 
@@ -62,6 +63,9 @@ def assess_llm_api_health(
         ):
             reasons.append(code)
 
+    if export_failed_count > 0:
+        reasons.append("telemetry_export_degraded")
+
     if reasons:
         return LLMAPIHealthAssessment(
             status=LLMAPIHealthStatus.DEGRADED,
@@ -80,6 +84,7 @@ def classify_llm_api_health(
     utilization_rate: float,
     capacity_rejections: int,
     failure_counts: dict[str, int],
+    export_failed_count: int = 0,
 ) -> LLMAPIHealthStatus:
     """Return only the governed LLM API health status."""
 
@@ -88,4 +93,5 @@ def classify_llm_api_health(
         utilization_rate=utilization_rate,
         capacity_rejections=capacity_rejections,
         failure_counts=failure_counts,
+        export_failed_count=export_failed_count,
     ).status

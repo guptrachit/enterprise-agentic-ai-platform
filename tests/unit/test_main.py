@@ -87,14 +87,14 @@ def test_llm_health_endpoint() -> None:
 
     payload = response.json()
 
-    assert payload["status"] in {
+    assert payload["health"]["status"] in {
         "healthy",
         "degraded",
         "saturated",
     }
 
     assert "runtime" in payload
-    assert "api_metrics" in payload
+    assert "api" in payload
     assert "concurrency" in payload
     assert "rate_limit" in payload
 
@@ -165,9 +165,9 @@ def test_llm_health_endpoint_contains_reason_codes() -> None:
 
     payload = response.json()
 
-    assert "reasons" in payload
+    assert "reasons" in payload["health"]
     assert isinstance(
-        payload["reasons"],
+        payload["health"]["reasons"],
         list,
     )
 
@@ -176,7 +176,7 @@ def test_llm_health_endpoint_contains_reason_codes() -> None:
             reason,
             str,
         )
-        for reason in payload["reasons"]
+        for reason in payload["health"]["reasons"]
     )
 
 
@@ -249,3 +249,22 @@ def test_application_rejects_unsupported_media_type_with_security_headers() -> N
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
     assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_llm_health_endpoint_contains_export_health() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health/llm")
+
+    assert response.status_code == 200
+
+    export = response.json()["export"]
+
+    assert export["total_exports"] >= 0
+
+    assert export["successful_exports"] >= 0
+
+    assert export["failed_exports"] >= 0
+
+    assert 0.0 <= export["success_rate"] <= 1.0
+
+    assert 0.0 <= export["failure_rate"] <= 1.0
