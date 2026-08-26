@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from agent_platform.config import get_settings
 from agent_platform.llm.api_health import (
@@ -21,9 +22,18 @@ from agent_platform.llm.factory import create_llm_client_for_model
 from agent_platform.llm.fully_configured_governed_runtime import (
     create_fully_configured_governed_runtime,
 )
+from agent_platform.security.content_type_middleware import (
+    JSONContentTypeMiddleware,
+)
 from agent_platform.security.exception_handlers import (
     register_security_exception_handlers,
     security_metrics,
+)
+from agent_platform.security.request_size_middleware import (
+    RequestBodySizeMiddleware,
+)
+from agent_platform.security.security_headers import (
+    SecurityHeadersMiddleware,
 )
 
 
@@ -44,6 +54,7 @@ async def lifespan(
     )
 
     app.state.governed_llm_runtime = runtime
+
     app.state.governed_llm_api_service = GovernedLLMAPIService(
         runtime=runtime.refresh_service
     )
@@ -51,11 +62,40 @@ async def lifespan(
     yield
 
 
+settings = get_settings()
+
 app = FastAPI(
     title="Enterprise Agentic AI Platform",
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.llm_api_cors_allowed_origins),
+    allow_credentials=False,
+    allow_methods=[
+        "GET",
+        "POST",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Correlation-ID",
+    ],
+)
+
+app.add_middleware(JSONContentTypeMiddleware)
+
+app.add_middleware(
+    RequestBodySizeMiddleware,
+    max_body_bytes=(settings.llm_api_max_request_body_bytes),
+)
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 register_security_exception_handlers(app)
 

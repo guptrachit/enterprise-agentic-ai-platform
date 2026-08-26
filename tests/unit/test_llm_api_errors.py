@@ -112,3 +112,16 @@ def test_maps_authorization_denied() -> None:
     assert result.message == (
         "The authenticated identity is not authorized to perform this operation."
     )
+
+
+def test_maps_unsupported_media_type() -> None:
+    from agent_platform.security.content_type_policy import (
+        UnsupportedMediaTypeError,
+    )
+
+    result = map_llm_exception(UnsupportedMediaTypeError())
+
+    assert result.status_code == 415
+    assert result.code == "unsupported_media_type"
+
+    assert result.message == ("Content-Type must be application/json.")

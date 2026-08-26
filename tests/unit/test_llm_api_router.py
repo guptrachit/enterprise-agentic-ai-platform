@@ -14,6 +14,9 @@ from agent_platform.llm.errors import (
     LLMInvalidRequestError,
     LLMTransientError,
 )
+from agent_platform.security.content_type_middleware import (
+    JSONContentTypeMiddleware,
+)
 from agent_platform.security.exception_handlers import (
     register_security_exception_handlers,
 )
@@ -23,6 +26,8 @@ def create_app(
     service,
 ) -> FastAPI:
     app = FastAPI()
+
+    app.add_middleware(JSONContentTypeMiddleware)
 
     register_security_exception_handlers(app)
 
@@ -1389,3 +1394,28 @@ def test_generate_route_allows_identity_with_generate_scope() -> None:
     assert response.status_code == 200
 
     service.generate.assert_awaited_once()
+
+
+def test_generate_route_rejects_unsupported_content_type() -> None:
+    service = AsyncMock()
+
+    client = TestClient(create_app(service))
+
+    response = client.post(
+        "/llm/generate",
+        content='{"prompt":"Answer."}',
+        headers={
+            "Content-Type": "text/plain",
+            "X-Correlation-ID": "corr-content-type",
+        },
+    )
+
+    assert response.status_code == 415
+
+    detail = response.json()["detail"]
+
+    assert detail["code"] == ("unsupported_media_type")
+
+    assert response.headers["X-Correlation-ID"] == "corr-content-type"
+
+    service.generate.assert_not_awaited()

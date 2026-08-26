@@ -17,9 +17,11 @@ from agent_platform.llm.errors import (
 from agent_platform.security.auth_policy import (
     AuthenticationRequiredError,
 )
-
 from agent_platform.security.authorization import (
     AuthorizationDeniedError,
+)
+from agent_platform.security.content_type_policy import (
+    UnsupportedMediaTypeError,
 )
 
 
@@ -63,8 +65,17 @@ def map_llm_exception(
         return LLMAPIError(
             status_code=403,
             code="authorization_denied",
-            message="The authenticated identity is not authorized "
-            "to perform this operation.",
+            message=(
+                "The authenticated identity is not authorized "
+                "to perform this operation."
+            ),
+        )
+
+    if isinstance(error, UnsupportedMediaTypeError):
+        return LLMAPIError(
+            status_code=415,
+            code="unsupported_media_type",
+            message="Content-Type must be application/json.",
         )
 
     if isinstance(error, PromptTooLargeError):

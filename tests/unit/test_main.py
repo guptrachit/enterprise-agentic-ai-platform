@@ -198,3 +198,54 @@ def test_llm_health_endpoint_contains_security_health() -> None:
         security["failure_counts"],
         dict,
     )
+
+
+def test_application_adds_security_headers() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_application_allows_configured_cors_origin() -> None:
+    with TestClient(app) as client:
+        response = client.get(
+            "/health",
+            headers={
+                "Origin": "http://localhost:3000",
+            },
+        )
+
+    assert response.status_code == 200
+
+    assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
+
+
+def test_application_rejects_unsupported_media_type_with_security_headers() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/llm/generate",
+            content='{"prompt":"Answer."}',
+            headers={
+                "Content-Type": "text/plain",
+                "X-Correlation-ID": "corr-main-media",
+            },
+        )
+
+    assert response.status_code == 415
+
+    assert response.json()["detail"]["code"] == ("unsupported_media_type")
+
+    assert response.headers["X-Correlation-ID"] == "corr-main-media"
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+
+    assert response.headers["Cache-Control"] == "no-store"

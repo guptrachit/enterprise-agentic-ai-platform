@@ -244,3 +244,63 @@ def test_settings_can_require_llm_api_authentication() -> None:
     )
 
     assert settings.llm_api_authentication_required is True
+
+
+def test_settings_default_cors_allowed_origins() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_cors_allowed_origins == ("http://localhost:3000",)
+
+
+def test_settings_accepts_cors_allowed_origins() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+        llm_api_cors_allowed_origins=(
+            "https://app.example.com",
+            "https://admin.example.com",
+        ),
+    )
+
+    assert settings.llm_api_cors_allowed_origins == (
+        "https://app.example.com",
+        "https://admin.example.com",
+    )
+
+
+def test_settings_rejects_empty_cors_origin() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("llm_api_cors_allowed_origins must not contain empty values"),
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_cors_allowed_origins=(
+                "https://app.example.com",
+                " ",
+            ),
+        )
+
+
+def test_settings_default_llm_api_max_request_body_bytes() -> None:
+    settings = Settings(
+        openai_api_key="test-key",
+    )
+
+    assert settings.llm_api_max_request_body_bytes == 65_536
+
+
+def test_settings_reject_invalid_llm_api_max_request_body_bytes() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match=("llm_api_max_request_body_bytes must be greater than 0"),
+    ):
+        Settings(
+            openai_api_key="test-key",
+            llm_api_max_request_body_bytes=0,
+        )

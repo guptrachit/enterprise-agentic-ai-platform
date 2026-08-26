@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     llm_api_authentication_required: bool = False
 
+    llm_api_cors_allowed_origins: tuple[str, ...] = ("http://localhost:3000",)
+
+    llm_api_max_request_body_bytes: int = 65_536
+
     @model_validator(mode="after")
     def validate_runtime_policy_refresh(
         self,
@@ -95,9 +99,17 @@ class Settings(BaseSettings):
         if self.llm_api_rate_limit_window_seconds <= 0:
             raise ValueError("llm_api_rate_limit_window_seconds must be greater than 0")
 
+        if self.llm_api_max_request_body_bytes <= 0:
+            raise ValueError("llm_api_max_request_body_bytes must be greater than 0")
+
         if any(not host.strip() for host in self.llm_api_trusted_proxy_hosts):
             raise ValueError(
                 "llm_api_trusted_proxy_hosts must not contain empty values"
+            )
+
+        if any(not origin.strip() for origin in self.llm_api_cors_allowed_origins):
+            raise ValueError(
+                "llm_api_cors_allowed_origins must not contain empty values"
             )
 
         return self
