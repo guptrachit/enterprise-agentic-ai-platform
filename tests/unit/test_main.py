@@ -9,6 +9,8 @@ from agent_platform.production_readiness import (
     ProductionReadinessError,
 )
 
+from agent_platform.llm.api_router import get_governed_llm_api_service
+
 
 def test_root_endpoint() -> None:
     with TestClient(app) as client:
@@ -51,36 +53,38 @@ def test_llm_generate_uses_application_service() -> None:
 
         return LLMGenerateResponse(
             content="Generated answer",
-            policy_identifier=("production-routing-policy@1.0.0"),
+            policy_identifier="production-routing-policy@1.0.0",
             model="primary",
             provider="openai",
         )
 
     service.generate = generate
 
-    with TestClient(app) as client:
-        original_service = app.state.governed_llm_api_service
+    app.dependency_overrides[get_governed_llm_api_service] = lambda: service
 
-        try:
-            app.state.governed_llm_api_service = service
-
+    try:
+        with TestClient(app) as client:
             response = client.post(
                 "/llm/generate",
                 json={
                     "prompt": "Hello.",
                 },
             )
-        finally:
-            app.state.governed_llm_api_service = original_service
 
-    assert response.status_code == 200
+        assert response.status_code == 200
 
-    assert response.json() == {
-        "content": "Generated answer",
-        "policy_identifier": ("production-routing-policy@1.0.0"),
-        "model": "primary",
-        "provider": "openai",
-    }
+        assert response.json() == {
+            "content": "Generated answer",
+            "policy_identifier": "production-routing-policy@1.0.0",
+            "model": "primary",
+            "provider": "openai",
+        }
+
+    finally:
+        app.dependency_overrides.pop(
+            get_governed_llm_api_service,
+            None,
+        )
 
 
 def test_llm_health_endpoint() -> None:
