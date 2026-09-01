@@ -4,12 +4,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_platform.llm.api_models import LLMGenerateResponse
+from agent_platform.llm.api_router import get_governed_llm_api_service
 from agent_platform.main import app
 from agent_platform.production_readiness import (
     ProductionReadinessError,
 )
-
-from agent_platform.llm.api_router import get_governed_llm_api_service
 
 
 def test_root_endpoint() -> None:

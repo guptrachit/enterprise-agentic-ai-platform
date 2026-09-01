@@ -1,6 +1,6 @@
 from agent_platform.llm.routing_deployment_gate import (
-    RoutingDeploymentGateStatus,
     RoutingDeploymentGateResult,
+    RoutingDeploymentGateStatus,
 )
 from agent_platform.llm.routing_deployment_gate_cli import (
     deployment_gate_exit_code,

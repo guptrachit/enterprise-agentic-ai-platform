@@ -7,6 +7,7 @@ import pytest
 from agent_platform.llm.active_routing_policy_resolver import (
     ActiveRoutingPolicyResolver,
 )
+from agent_platform.llm.execution import LLMExecutionRequest
 from agent_platform.llm.governed_routing_policy import (
     GovernedRoutingPolicy,
 )
@@ -34,7 +35,6 @@ from agent_platform.llm.versioned_routing_policy import (
     VersionedRoutingPolicy,
 )
 from agent_platform.llm.workload import LLMWorkload
-from agent_platform.llm.execution import LLMExecutionRequest
 
 
 def create_model(

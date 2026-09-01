@@ -79,10 +79,12 @@ def create_factory(
     *,
     registry: RoutingPolicyRegistry,
     models: dict[str, ModelDefinition],
-    client_factory=Mock(),
+    client_factory=None,
     metrics: RoutingMetrics | None = None,
     metrics_exporter=None,
 ) -> RuntimeLLMExecutionServiceFactory:
+    if client_factory is None:
+        client_factory = Mock()
     router_factory = RuntimeModelRouterFactory(
         resolver=ActiveRoutingPolicyResolver(registry),
         models=models,

@@ -1,3 +1,5 @@
+import pytest
+
 from agent_platform.llm.governed_routing_policy import (
     GovernedRoutingPolicy,
 )
@@ -120,9 +122,7 @@ def test_activation_audit_event_is_immutable() -> None:
         )
     )
 
-    try:
+    with pytest.raises(AttributeError):
         event.activated_version = "9.9.9"
-    except Exception:
-        pass
 
     assert event.activated_version == "2.0.0"

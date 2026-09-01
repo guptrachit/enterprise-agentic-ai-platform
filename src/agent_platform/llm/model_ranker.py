@@ -46,13 +46,17 @@ class ModelRanker:
         if preference.prefer_lower_latency:
             score += -int(model.latency_tier)
 
-        if preference.preferred_cost_tier is not None:
-            if model.cost_tier == preference.preferred_cost_tier:
-                score += 10
+        if (
+            preference.preferred_cost_tier is not None
+            and model.cost_tier == preference.preferred_cost_tier
+        ):
+            score += 10
 
-        if preference.preferred_latency_tier is not None:
-            if model.latency_tier == preference.preferred_latency_tier:
-                score += 10
+        if (
+            preference.preferred_latency_tier is not None
+            and model.latency_tier == preference.preferred_latency_tier
+        ):
+            score += 10
 
         if preference.preferred_providers:
             try:

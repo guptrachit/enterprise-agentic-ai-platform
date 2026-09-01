@@ -446,30 +446,3 @@ def test_routing_metrics_snapshot_contains_export_failures() -> None:
     payload = snapshot.to_dict()
 
     assert payload["metrics_export_failures"] == 2
-
-
-def test_routing_metrics_records_export_failure() -> None:
-    metrics = RoutingMetrics()
-
-    metrics.record_export_failure()
-
-    assert metrics.metrics_export_failures == 1
-
-    metrics.record_export_failure()
-
-    assert metrics.metrics_export_failures == 2
-
-
-def test_routing_metrics_snapshot_contains_export_failures() -> None:
-    metrics = RoutingMetrics()
-
-    metrics.record_export_failure()
-    metrics.record_export_failure()
-
-    snapshot = metrics.snapshot()
-
-    assert snapshot.metrics_export_failures == 2
-
-    payload = snapshot.to_dict()
-
-    assert payload["metrics_export_failures"] == 2

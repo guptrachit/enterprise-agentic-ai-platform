@@ -17,8 +17,8 @@ from agent_platform.llm.model_tier import (
     ModelLatencyTier,
 )
 from agent_platform.llm.routing_constraints import RoutingConstraints
-from agent_platform.llm.workload import LLMWorkload
 from agent_platform.llm.routing_reason import RoutingReasonCode
+from agent_platform.llm.workload import LLMWorkload
 
 
 def create_model(

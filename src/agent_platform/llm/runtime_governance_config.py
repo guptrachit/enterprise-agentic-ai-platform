@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from agent_platform.llm.runtime_policy_refresh import (
     RuntimePolicyRefreshConfig,
@@ -11,7 +11,9 @@ class RuntimeGovernanceConfig:
     """Configuration for governed runtime routing behavior."""
 
     policy_name: str = "production-routing-policy"
-    refresh: RuntimePolicyRefreshConfig = RuntimePolicyRefreshConfig()
+    refresh: RuntimePolicyRefreshConfig = field(
+        default_factory=RuntimePolicyRefreshConfig
+    )
     enable_refresh_metrics: bool = True
 
     def __post_init__(self) -> None:
