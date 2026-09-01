@@ -4,10 +4,14 @@ from agent_platform.tools.contracts import (
     ToolInput,
     ToolOutput,
 )
+from agent_platform.tools.definition import ToolDefinition
+from agent_platform.tools.metadata import ToolMetadata
 
 __all__ = [
     "Tool",
+    "ToolDefinition",
     "ToolExecutionContext",
     "ToolInput",
+    "ToolMetadata",
     "ToolOutput",
 ]
