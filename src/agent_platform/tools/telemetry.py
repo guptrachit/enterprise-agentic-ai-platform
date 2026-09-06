@@ -1,4 +1,4 @@
-from dataclasses import Field, dataclass
+from dataclasses import dataclass
 from enum import StrEnum
 from time import monotonic
 

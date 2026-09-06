@@ -46,8 +46,53 @@ __all__ = [
     "AgentFinalResponse",
     "AgentGuardrailError",
     "AgentGuardrailPolicy",
+    "AgentKnowledgeRetriever",
     "AgentModel",
     "AgentObservation",
+    "AgentRetrievalExecutionContext",
+    "AgentRetrievalRequest",
+    "AgentRetrievalService",
+    "AgentRetrievedContext",
     "AgentStepLimitExceededError",
     "AgentToolLimitExceededError",
+    "CitationValidationResult",
+    "CitationValidationService",
+    "GovernedAgentExecutionPort",
+    "GovernedAgentExecutionRequest",
+    "GovernedAgentExecutionResult",
+    "GovernedRAGAgentRequest",
+    "GovernedRAGAgentResult",
+    "GovernedRAGAgentService",
+    "ObservableAgentRetrievalService",
 ]
+
+from agent_platform.agents.citation_validation import (
+    CitationValidationResult,
+    CitationValidationService,
+)
+from agent_platform.agents.governed_execution import (
+    GovernedAgentExecutionPort,
+    GovernedAgentExecutionRequest,
+    GovernedAgentExecutionResult,
+)
+from agent_platform.agents.governed_rag import (
+    GovernedRAGAgentRequest,
+    GovernedRAGAgentResult,
+)
+from agent_platform.agents.governed_rag_service import (
+    GovernedRAGAgentService,
+)
+from agent_platform.agents.observable_retrieval_service import (
+    ObservableAgentRetrievalService,
+)
+from agent_platform.agents.retrieval import (
+    AgentKnowledgeRetriever,
+    AgentRetrievalRequest,
+    AgentRetrievedContext,
+)
+from agent_platform.agents.retrieval_context import (
+    AgentRetrievalExecutionContext,
+)
+from agent_platform.agents.retrieval_service import (
+    AgentRetrievalService,
+)
